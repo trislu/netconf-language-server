@@ -13,7 +13,7 @@
                 "${workspaceFolder}/clients/vscode/**/*"
             ],
             "env": {
-                "__DEBUG_LSP_SERVER": "${workspaceFolder}/target/debug/netconf-lsp"
+                "__DEBUG_LSP_SERVER": "${workspaceFolder}/target/debug/netconf-language-server"
             },
             "autoAttachChildProcesses": true,
             "preLaunchTask": "npm: build-server-and-client"
@@ -22,7 +22,7 @@
             "name": "Attach to LSP server",
             "type": "lldb",
             "request": "attach",
-            "program": "${workspaceFolder}/target/debug/netconf-lsp",
+            "program": "${workspaceFolder}/target/debug/netconf-language-server",
             "sourceLanguages": [
                 "rust"
             ]

@@ -1,4 +1,4 @@
-# netconf-lsp
+# netconf-language-server
 
 A [language server](https://microsoft.github.io/language-server-protocol/) for
 authoring **NETCONF / YANG** modules (`*.yang`), implemented in Rust, with a
@@ -6,7 +6,7 @@ VS Code extension.
 
 ## Repository layout
 
-- [`src/`](src) — the language server binary (`netconf-lsp`).
+- [`src/`](src) — the language server binary (`netconf-language-server`).
   Semantic engine: [`yrepo`](https://github.com/trislu/yrepo) (YANG
   parse/resolve/query). Grammar: `tree-sitter-yang`.
 - [`clients/vscode`](clients/vscode) — VS Code extension (language id `yang`,
@@ -30,7 +30,7 @@ VS Code extension.
 ## Building
 
 ```bash
-cargo build          # server -> target/debug/netconf-lsp
+cargo build          # server -> target/debug/netconf-language-server
 cargo clippy         # lint
 ```
 
@@ -43,7 +43,7 @@ npm run compile      # tsc + eslint + esbuild -> dist/extension.js
 ```
 
 To debug the extension end-to-end (F5 from this repo), `.vscode/launch.json`
-runs the Extension Development Host against `target/debug/netconf-lsp` (see
+runs the Extension Development Host against `target/debug/netconf-language-server` (see
 `__DEBUG_LSP_SERVER`) with `examples/` openable as the test workspace.
 
 ## Settings

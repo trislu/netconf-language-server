@@ -1,15 +1,17 @@
 # NETCONF Language Server — Architecture
 
-> Working/evolving design document. Discussion only — no implementation until decided.
-> Status markers: **[DECIDE]** = open decision, **[DONE]** = settled, **[ASSUME]** = working assumption to confirm.
+> As-built architecture & decision record for the **implemented** server (v0.1.0).
+> The LSP features in §7–§8 are all shipped — fold, format, highlight, pull
+> diagnostics, goto, hover, completion — and covered by unit + corpus tests
+> (§11). Status markers: **[DONE]** = settled & implemented, **[ASSUME]** = working
+> assumption to confirm.
 
 ## 0. Scope
 
 A Rust language server for authoring **NETCONF/YANG** (`*.yang`) plus a **VS Code** extension.
 
-- Reference implementation skeleton: **`gemcap-language-server`** (MIT — mirror freely).
-- Design lessons (concepts only, no code): **`lsp-for-freemarker`** (NOKIA licensed — do not copy).
-- Semantic engine: **`yrepo`** (MIT sibling crate, already a path dependency). Grammar: `tree-sitter-yang` (transitively pulled in by `yrepo`).
+- Reference implementation skeleton & Design lessons: **`gemcap-language-server`** (MIT — mirror freely).
+- Semantic engine: **`yrepo`** (MIT crate, `0.1` on crates.io). Grammar: `tree-sitter-yang` (transitively pulled in by `yrepo`).
 
 Original LSP feature spec is preserved and re-mapped in §7–§8.
 
@@ -22,22 +24,22 @@ flowchart LR
     subgraph Client[VS Code / languageclient]
         ED[editor buffers]
     end
-    subgraph LS[netconf-lsp binary]
+    subgraph LS[netconf-language-server binary]
         TP[transport tower-lsp-server]
         S[server.rs dispatch + state]
         DOC[(doc store: moka cache<br/>rope + version)]
         SYN[syntax view: statement tree / tokens]
         REPO[(yrepo::Repository<br/>workspace-wide, locked)]
-        LIB[compile -> Arc<Library>]
-        FEA[feature modules<br/>fold/format/tokens/goto/hover/diag/action]
-        CFG[(config cache)]
+        SNAP[(compile snapshot<br/>generation + Arc<Library>)]
+        FEA[feature modules<br/>semantic_tokens/fold/format/goto/hover/completion/diag]
+        CFG[(config once)]
         TP --> S
         S --> DOC
         DOC --> SYN
         S --> REPO
-        REPO --> LIB
+        REPO --> SNAP
         SYN --> FEA
-        LIB --> FEA
+        SNAP --> FEA
         CFG --> FEA
         FEA --> TP
     end
@@ -48,21 +50,21 @@ flowchart LR
 
 | Crate | Owns | Does NOT own |
 | --- | --- | --- |
-| `netconf-lsp` | LSP transport, document store, feature logic, config, VS Code glue | YANG grammar knowledge, semantic model |
+| `netconf-language-server` | LSP transport, document store, feature logic, config, VS Code glue | YANG grammar knowledge, semantic model |
 | `yrepo` | parsing, statement/CST model, cross-file compile, symbol tables, effective tree | anything LSP-specific |
 | `tree-sitter-yang` | the grammar | — |
 
-**[DONE D2]** `yrepo` (commit `7a5abdf`) now exposes the statement tree publicly:
+**[DONE D2]** `yrepo` exposes the statement tree publicly; the server consumes it (hold the repo read-lock while borrowing):
 
 - `Repository::statement(url) -> Option<&Statement>` — root `module`/`submodule` statement (walk with `Statement::preorder`).
 - `Repository::statement_at(url, row, col) -> Option<&Statement>` — narrowest statement under the caret (read `.arg`/`.keyword` directly).
 - `Statement`, `Argument`, `StatementEnd` re-exported (`range`/`keyword`/`arg`/`end`/`children` + `is_block`/`body`/`span`/`preorder`).
 
-**[DONE D13-comments]** Comments are now exposed too: `Repository::comments(url) -> Option<&[Comment]>` (`Comment{range, kind: Line|Block, text}`, source order, string-safe).
+**[DONE D13-comments]** Comments are exposed too: `Repository::comments(url) -> Option<&[Comment]>` (`Comment{range, kind: Line|Block, text}`, source order, string-safe) — consumed by the formatter and highlight.
 
 **[DONE]** The semantic layer also gained **type-chain & identity resolution**: `Library::resolve_type` / `resolve_identity` / `derived_identities` plus completion helpers `type_candidates` / `identity_candidates` (see §6.2, §8.4–8.5).
 
-**[DONE D15-tokens]** The token stream is now exposed too (working tree on top of `7a5abdf`): `Repository::tokens(url) -> Option<&[Token]>` with `Token{kind: TokenKind, range, text}` — grammar-precise `Comment`/`Keyword`/`Identifier`/`String`/`Number`/`Boolean`/`Operator` leaves (see §5.1/§5.3). **No syntactic gap remains.**
+**[DONE D15-tokens]** The token stream is exposed too: `Repository::tokens(url) -> Option<&[Token]>` with `Token{kind: TokenKind, range, text}` — grammar-precise `Comment`/`Keyword`/`Identifier`/`String`/`Number`/`Boolean`/`Operator` leaves (see §5.1/§5.3). Highlight literal colors are driven straight from these. **No syntactic gap remains.**
 
 ---
 
@@ -78,57 +80,68 @@ flowchart LR
 - **Pull diagnostics** (modern `textDocument/diagnostic`), not `publish_diagnostics`.
 - **Client**: `clients/vscode` with vscode-languageclient 10, `configurationDefaults` enabling semantic highlight, bundled per-platform binary under `resources/bin/`, `__DEBUG_LSP_SERVER` env override for debugging against `target/debug/…`.
 
-### 2.2 Adopt conceptually from freemarker (NOKIA — re-implement, never copy)
+### 2.2 Adopt conceptually from other LSPs
 
 - Single source of truth for grammar node kinds (typed enum mirroring grammar kinds, matched by `strum`) instead of stringly-typed walks.
 - Features as traits implemented on a per-document model; one capability-assembly point.
-- Stable **string diagnostic codes + doc URLs**, with quick-fixes driven by the client-supplied diagnostic codes.
+- Stable **string diagnostic codes** (`DiagnosticCode::as_str()`, plus the LS-side `conflict_prefix`); doc-URL links and code-driven quick-fixes are deferred (D9).
 - Careful LSP encoding: UTF-16 delta encoding for semantic tokens, multi-line token splitting, saturating offset math (line-0 underflow).
-- File-lifecycle hygiene: invalidate doc state on close / watched-file change / delete.
+- File-lifecycle hygiene: on close, revert to the on-disk text or drop the doc from the repo (§4). A `workspace/didChangeWatchedFiles` re-scan is deferred (v1 scans the workspace once, §6.1).
 
-### 2.3 Avoid (from freemarker report)
+### 2.3 Anti-patterns to avoid
 
 - Blocking synchronous filesystem work inside async request paths.
 - Coarse invalidation of the whole semantic cache on every keystroke (we get this handled differently — §6 full-workspace compile).
-- No automated LSP-level tests. **We will build integration tests from the start** (spawn the server, drive it over stdio with a small JSON-RPC harness, `corpus/` of `*.yang` fixtures).
+- No automated LSP-level tests. Tests shipped are **unit-level**: feature logic is driven against a scripted `yrepo` repository (`goto.rs`/`hover.rs`) plus the vendored highlight corpus (`semantic_token.rs`, §11). A full stdio JSON-RPC integration harness is still a future addition.
 
 ---
 
-## 3. Crate / module layout (proposal)
+## 3. Crate / module layout (as built)
 
 ```text
-netconf-lsp/
-├── Cargo.toml
+netconf-language-server/
+├── Cargo.toml              # tower-lsp-server 0.23, moka 0.12 (future), ropey 1.6,
+│                           #   tokio, serde/serde_json, strum, yrepo = "0.1"
 ├── docs/architecture.md
 ├── src/
-│   ├── main.rs            # transport boilerplate; deny print!; module decls
-│   ├── server.rs          # Backend/Server: state + LanguageServer impl (routing only)
-│   ├── client.rs          # global Client holder, logging macros
-│   ├── config.rs          # Config (settings model, §9)
-│   ├── text.rs            # rope-backed doc text: byte<->line/UTF-16 conversion
-│   ├── document.rs        # per-doc model: rope + version + (syntax handle)
-│   ├── workspace.rs       # YANG file discovery/scan, watcher events, upsert into repo
-│   ├── semantic_token.rs  # highlight
-│   ├── fold.rs
-│   ├── format.rs
-│   ├── goto.rs
-│   ├── hover.rs
-│   ├── completion.rs  # type/base-arg completion (D16 — in scope)
-│   ├── diagnostic.rs
-│   ├── action.rs
-│   └── convert.rs         # yrepo byte ranges -> lsp::Range etc.
-└── clients/vscode/        # VS Code extension (mirror gemcap)
+│   ├── main.rs             # transport boilerplate; deny print!; module decls
+│   ├── server.rs           # Server: state (docs cache, repo, snapshot) + LanguageServer impl (routing)
+│   ├── client.rs           # global Client holder; info!/warning! macros; Window::log;
+│   │                       #   Workspace::configuration; Diagnostics::refresh
+│   ├── config.rs           # Config (§9): netconf.indentSize
+│   ├── convert.rs          # Rope byte offset <-> LSP line/UTF-16 conversion (byte/pos math)
+│   ├── document.rs         # per-open-doc model: rope + version
+│   ├── workspace.rs        # *.yang discovery + file-URI <-> path helpers
+│   ├── semantic_token.rs   # highlight (two passes + delta encode + corpus tests)
+│   ├── fold.rs             # statement-level folding
+│   ├── format.rs           # full-doc formatter (regenerate + splice comments, parse guards)
+│   ├── goto.rs             # definition -> LocationLink (+ unit tests)
+│   ├── hover.rs            # hover markdown (+ unit tests)
+│   ├── completion.rs       # type / identity base completion (D16)
+│   ├── diagnostic.rs       # pull diagnostics + LS-side conflict-prefix check (D17)
+│   └── bin/
+│       ├── inspect.rs      # dev tool: yrepo diagnostic summary over a *.yang tree
+│       └── probe.rs        # dev tool: per-file diagnostic probe with source context
+├── clients/vscode/         # VS Code extension (mirror gemcap)
+├── examples/               # *.yang for manual testing
+└── testdata/highlight/     # vendored YANG corpus + baseline.json (highlight regression guard)
 ```
+
+Notes:
+
+- No `text.rs`: byte↔line/UTF-16 math lives in `convert.rs` over each doc's `Rope`.
+- No `action.rs`: quick-fixes are deferred (D9), so there is no `textDocument/codeAction`.
 
 ---
 
 ## 4. Document model & text sync
 
-**[DONE D1]** — **FULL sync** for v1 (rope kept for byte↔line/UTF-16 math).
+**[DONE D1]** — **FULL sync** (rope kept for byte↔line/UTF-16 math).
 
-Per open document we store (mirroring gemcap's `Gemtext`):
+Per open document the server stores (mirroring gemcap's `Gemtext`):
 
 ```rust
+// src/document.rs
 struct Document {
     version: i32,
     rope: Rope,                 // offset math: byte <-> line / UTF-16 col (convert.rs)
@@ -136,12 +149,21 @@ struct Document {
 }
 ```
 
-Keyed in a `moka::future::Cache<String /*url*/, Arc<Document>>`.
+Keyed in a `moka::future::Cache<String /*url*/, Arc<Document>>` (capacity 4096) on `Server.docs`.
 
-- gemcap uses **FULL** sync (`TextDocumentSyncKind::FULL`); freemarker uses **INCREMENTAL** with rope edits + tree-sitter `InputEdit`.
-- `yrepo::Repository::upsert` always takes the **full source** and re-parses the whole doc, so incremental sync would not avoid a reparse on the semantic side anyway.
+- `Server` advertises `TextDocumentSyncKind::FULL`; `didChange` only accepts
+  whole-document changes (a ranged change logs a warning and is ignored).
+- `didOpen`/`didChange` call `upsert_doc`: they insert the `Document` **and**
+  upsert the full source into `yrepo::Repository`, then bump the generation
+  (§6.1) and ask the client to re-pull diagnostics (§7).
+- `didClose` (`close_doc`) removes the buffer, re-upserts the **on-disk** text
+  (so a closed module keeps resolving for others' imports) or removes the
+  document from the repo when the file is gone, then bumps + refreshes.
+- `rope_for(url)` returns the open buffer's rope, else reads the file from disk —
+  used to map byte ranges of cross-file goto/hover targets that aren't open.
 
-Recommendation: **v1 = FULL sync** (simple, matches gemcap and yrepo's model; YANG modules are not typically megabytes). Keep rope so we can later add INCREMENTAL and cheap byte↔LSP math. Rope is used for conversion only (as in gemcap), not incremental rope editing.
+YANG modules are not typically megabytes, so a full re-parse per change is fine
+and matches `yrepo`'s model (`upsert` always takes the full source anyway).
 
 ---
 
@@ -149,7 +171,7 @@ Recommendation: **v1 = FULL sync** (simple, matches gemcap and yrepo's model; YA
 
 **[DONE D2]** — adopted option **(A)**: `yrepo` exposes an immutable *syntax view*.
 
-### 5.1 Verified surface (`yrepo` `7a5abdf`)
+### 5.1 `yrepo` surface consumed by the server
 
 ```rust
 // Repository (takes &self; borrows into the repo — hold the read-lock while extracting)
@@ -183,53 +205,59 @@ pub struct Statement { kind: StatementKind, range: Range<usize> /*whole node*/,
 | Goto type → typedef / base → identity | `statement_at()` → arg; `search_*` / `resolve_type` / `resolve_identity` | ✅ ready |
 | Hover prefixed arg / augment path | `statement_at()` → arg; `prefix_to_module` / `resolve_abs_schema_node_id` | ✅ ready |
 | Hover type chain / identity ancestry | `resolve_type()` (typedef stack → builtin) / `resolve_identity()` | ✅ ready |
-| Completion for `type` / `base` args | `type_candidates()` / `identity_candidates()` | ✅ in scope (D16) — §8.7 |
+| Completion for `type` / `base` args | `type_candidates()` / `identity_candidates()` | ✅ shipped (§8.7) |
 | Diagnostics | `Outcome.diagnostics` | ✅ ready |
 
 ### 5.3 Syntax view: complete — statements + comments + tokens
 
-All three syntactic layers are now exposed by `yrepo` (working tree on top of `7a5abdf`, uncommitted):
+The server consumes all three syntactic layers from `yrepo` (no local scanner):
 
 - `statement()` / `statement_at()` — the structural tree (§5.1);
 - `comments()` — comments, source-ordered, string-safe;
 - `tokens()` — **the grammar's raw lexical stream**: `Token{kind: TokenKind, range: byte Range, text}` with `TokenKind = Comment | Keyword | Identifier | String | Number | Boolean | Operator | Other` (`#[non_exhaustive]`). Disjoint, sorted, whitespace excluded. A quoted run is one `String` token (quotes included, never split → `"8080"` is a string, not a number); a `//` inside a string is part of the string; comments reappear here (a superset of `comments()`).
 
-**[DONE D15]** — option **(b)** was implemented, so the local-scanner option **(a)** is **dropped**: highlight's literal colors come straight from `tokens()` (map `TokenKind` → semantic type), with **no grammar logic duplicated** in `netconf-lsp`. Only the byte→UTF-16 conversion (via our `Rope`) remains ours.
+**[DONE D15]** — option **(b)** was implemented, so the local-scanner option **(a)** is **dropped**: highlight's literal colors come straight from `tokens()` (map `TokenKind` → semantic type), with **no grammar logic duplicated** in `netconf-language-server`. Only the byte→UTF-16 conversion (via our `Rope`) remains ours.
 
-> **Q15 answer** — "future `tokens()`" was exactly this API; it now exists, so (a) is moot.
-
-**[DONE D4]** — atomic/composite argument classification is settled (§8.3): `tokens()` supplies the literal kinds; `statement()` supplies keyword & atomic-argument spans; the only remaining mapping (which semantic type to give each `Identifier`/`Keyword` by context) is the accepted D4 map in §8.3.
+**[DONE D4]** — atomic/composite argument classification is settled (§8.3): `tokens()` supplies the literal kinds; `statement()` supplies keyword & atomic-argument spans; the remaining mapping (which semantic type to give each `Identifier`/`Keyword` by context) is the accepted D4 map in §8.3.
 
 ---
 
 ## 6. Semantic layer: `yrepo` Repository + Library
 
-Server state addition over gemcap — a **shared, workspace-wide** repository:
+Server state — a **shared, workspace-wide** repository plus a cached compile snapshot:
 
 ```rust
+// src/server.rs
 struct Server {
     root_uri: OnceLock<Uri>,
     repo: tokio::sync::RwLock<yrepo::Repository>,  // upsert/remove are &mut
-    // per-doc text in a moka cache as in gemcap
-    compile_gen: AtomicU64,   // bumped on every upsert/remove
-    lib_cache: RwLock<Option<Arc<yrepo::Library>>>,
-    config_cache: Cache<String, Config>,
+    docs: moka::future::Cache<String, Arc<Document>>,   // per-doc text (§4)
+    config: OnceLock<Config>,                            // §9
+    generation: AtomicU64,   // bumped on every upsert/remove/scan
+    snap: RwLock<Option<Snapshot>>,
+    scan: tokio::sync::OnceCell<()>,   // one-time workspace scan (§6.1)
+}
+
+struct Snapshot {           // immutable compile result, cached by generation
+    generation: u64,
+    lib: Option<Arc<yrepo::Library>>,
+    diags: Vec<yrepo::Diagnostic>,
 }
 ```
 
 ### 6.1 Who gets upserted
 
-`yrepo` resolves imports/includes **only among documents you `upsert`**. Therefore goto/hover/diagnostics across files require that **every reachable `.yang` in the workspace is in the repository**, not just open buffers. Design (see `workspace.rs`):
+`yrepo` resolves imports/includes **only among documents you `upsert`**. Therefore goto/hover/diagnostics across files require that **every reachable `.yang` in the workspace is in the repository**, not just open buffers. Implemented in `workspace.rs` + `server.rs`:
 
-1. On startup and on `workspace/didChangeWatchedFiles`: scan the workspace root for `*.yang`; `upsert` each; `remove` deleted ones.
-2. Open buffers are upserted on `didOpen`/`didChange` (full text) and re-upserted with fresh text; a doc that is both open and on disk should prefer buffer content.
+1. **Workspace scan** (`scan_workspace`): recursively finds `*.yang` under the root URI — skipping `target`/`.git`/`node_modules`/`.vscode`/`dist` — and upserts each file that is **not** an open (dirty) buffer, then bumps the generation and calls `Diagnostics::refresh`. It runs **exactly once**, lazily, guarded by `Server.scan` (`OnceCell`) via `ensure_scanned()`: the first caller (`initialized`, or an early `textDocument/diagnostic` pull) starts it and every other caller awaits the same scan. This prevents transient "import not open"/"augment target not found" errors computed against a half-scanned repo.
+2. Open buffers are upserted on `didOpen`/`didChange` (full text) and re-upserted with fresh text; a doc that is both open and on disk prefers buffer content (the scan skips open docs). `didClose` re-upserts the on-disk text or removes the doc (§4).
 3. **[DONE D5]** Imported modules *outside* the workspace (system YANG, `ietf-*`) are **ignored in v1**; their unresolved-import diagnostics are suppressed (configurable include dirs can come later).
 
-Because `compile()` is full-workspace and non-incremental, and it is CPU work on the request path, we:
+Because `compile()` is full-workspace and non-incremental, and it is CPU work on the request path, we cache its result:
 
-- run `compile()` lazily inside `spawn_blocking` (or a dedicated task) when a request needs a library **and** `compile_gen` moved since `lib_cache` was built;
-- cache the resulting `Arc<Library>` (immutable snapshot — cheap to share across concurrent requests);
-- accept full-recompile-per-change-batch in v1 (matches `yrepo`'s stated design; small module counts are typical when authoring).
+- `snapshot()` returns the cached `Snapshot` when its `generation` equals the current `Server.generation`; otherwise it recompiles (`repo.read().await.compile()`), stores the new `Arc<Library>` + diagnostics, and caches them. v1 accepts a full recompile per change batch (small module counts are typical when authoring) and runs it on the request path under the repo read-lock — no `spawn_blocking` needed because compile is read-only against the repo.
+- Every repo-affecting event (open/change/close/scan) bumps `generation`, so the next semantic request rebuilds the snapshot; pull-diagnostics reuse it and key their `result_id` on the generation (§7).
+- The immutable `Arc<Library>` snapshot is shared cheaply across concurrent requests; each request resolves goto/hover/completion against it (never against a half-compiled state).
 
 ### 6.2 API mapping (from `yrepo` README/report)
 
@@ -251,9 +279,9 @@ Because `compile()` is full-workspace and non-incremental, and it is CPU work on
 | `Library::type_candidates(module)` / `identity_candidates(module)` | completion for `type` / `base` args (`TypeCandidate{name, kind, module}`) |
 | `Typedef::base()` / `Identity::base()` | raw underlying `type` / `base` argument of a symbol |
 
-The `resolve_*` / `*_candidates` / `comments` APIs landed in `7a5abdf`; the `resolve_*` family needs a compiled `Library`, so use them behind the §6.1 compile cache.
+The `resolve_*` / `*_candidates` / `comments` APIs all come from `yrepo` 0.1; the `resolve_*` family needs a compiled `Library`, so the server always uses them behind the §6.1 compile snapshot.
 
-Positions: `yrepo` speaks **byte offsets** keyed by the exact url passed to `upsert`; `row`/`col` in `token_at`/`statement_at` are 0-based with `col` in Unicode scalars, not UTF-16. All conversion to LSP `Range` happens in `netconf-lsp` (§8, `convert.rs`). `DiagnosticCode` and `StatementKind` are `#[non_exhaustive]` — exhaustive matches need a wildcard arm. `statement()`/`statement_at()` borrow the repository (read-lock) — extract what you need, then drop the guard.
+Positions: `yrepo` speaks **byte offsets** keyed by the exact url passed to `upsert`; `row`/`col` in `token_at`/`statement_at` are 0-based with `col` in Unicode scalars, not UTF-16. All conversion to LSP `Range` happens in `netconf-language-server` (§8, `convert.rs`). `DiagnosticCode` and `StatementKind` are `#[non_exhaustive]` — exhaustive matches need a wildcard arm. `statement()`/`statement_at()` borrow the repository (read-lock) — extract what you need, then drop the guard.
 
 ---
 
@@ -272,20 +300,35 @@ User table, mapped onto `yrepo` codes and delivery mechanics:
 
 Plus `yrepo` extras already surfaced by compile: `DuplicateModule`, `NotYangDocument`, `UnresolvedGrouping` / `UnresolvedTypedef` / `UnresolvedIdentity` / `UnresolvedPrefix`, `IncludeCycle` / `ImportCycle` (both now emitted), `AugmentTargetNotFound`, `DeviationTargetNotFound`, `ListWithoutKey`/`KeyLeafNotFound`/`InvalidKey`, `MissingRevisionNote`. Still **reserved/unemitted**: `DuplicateSymbol`, `AugmentTargetNotUnique` (the former `ImportCycleNote` was renamed to `ImportCycle` and is now emitted).
 
-**[DONE D17]** Remaining spec diagnostics implemented **LS-side, v1** over `statement()` / `compile()`:
-
-- **conflict prefix** — two `import` children (or an `import` vs the module's own `prefix`) declaring the same prefix.
+**[DONE D17]** Remaining spec diagnostics implemented **LS-side** over `statement()`
+in `diagnostic.rs::conflict_prefix`: **conflict prefix** — two `import` children
+(or an `import` vs the module's own `prefix`) declaring the same prefix
+(RFC 7950 §7.1.4), emitted with the stable code string `conflict_prefix`.
 Circular-import reporting moved into `yrepo` (`ImportCycle`, D6); duplicate-siblings is **dropped** (D8).
 
 **[DONE D6]** — **error** for circular *import* chains, now reported **by `yrepo`** as `ImportCycle` (RFC 7950 §5.1) — no LS-side DFS needed.
 
 > **Q6 — "RFC allows some cycles"?** Correction: **RFC 7950 (YANG 1.1) §5.1 forbids them**: *"There MUST NOT be any circular chains of imports. For example, if module "a" imports module "b", "b" cannot import "a"."* My earlier note was wrong. The reason `yrepo` used to "compile" A↔B silently is mechanical: an `import` is a `prefix → module` mapping and name resolution is a lookup (never recursive expansion), so a cycle neither hangs nor confuses it — which is why it was never reported. That is now fixed: `yrepo` walks the module graph and emits `ImportCycle` (error) on the offending import. Include cycles were already errors (`IncludeCycle`). No structural quick-fix exists — the author must drop or redirect an import.
 
-**[DONE D7]** Delivery model: **pull diagnostics** (`textDocument/diagnostic`, full report with `result_id` = workspace compile generation), mirroring gemcap; no `publish_diagnostics`.
+**[DONE D7]** Delivery model: **pull diagnostics** (`textDocument/diagnostic`).
+`Server::diagnostic` first awaits the one-time workspace scan (§6.1), then serves
+from the `snapshot()` cache with `result_id` = compile generation. yrepo
+`Diagnostic`s are filtered per `url` and converted with that doc's rope (byte →
+UTF-16 `Range`, `severity`, stable string `code` from `DiagnosticCode::as_str()`,
+`source: "yang"`, message), then merged with the LS-side conflict-prefix check.
+Because a pull client only re-requests on document change — never when the
+*module set* changes — `client.rs::Diagnostics::refresh`
+(`workspace/diagnostic/refresh`) is called after every open/close/scan so stale
+cross-file results are replaced. No `publish_diagnostics`.
 
 **[DONE D8]** **Skipped** — the "duplicated argument string among siblings" diagnostic is dropped. Sibling uniqueness is genuinely ambiguous once `choice`/`case` (incl. shorthand `case`s, RFC 7950 §7.9.2) and `uses`-expanded nodes are involved; not worth the complexity for v1. The spec row above is marked deferred.
 
-Quick-fix mechanics (freemarker pattern, re-implemented): `action.rs` would receive the client-provided diagnostics in `CodeActionParams`, key off our stable diagnostic **code string**, and return edits over the diagnostic's range — no re-analysis. **[DONE D9]** — **no quick-fixes in v1** (comment-out deferred): the `action.rs` module and `textDocument/codeAction` capability are postponed until a fix with real value exists.
+**[DONE D9]** — **no quick-fixes in v1** (comment-out deferred): there is no
+`action.rs` module and no `textDocument/codeAction` capability. If one ships
+later it will follow the same quick-fix pattern — receive the client-provided
+diagnostics in `CodeActionParams`, key off our stable diagnostic **code string**
+(`DiagnosticCode::as_str()` / `conflict_prefix`), and return edits over the
+diagnostic's range with no re-analysis.
 
 ---
 
@@ -293,11 +336,14 @@ Quick-fix mechanics (freemarker pattern, re-implemented): `action.rs` would rece
 
 Each feature = one module implementing `capability()` + `handle(&doc, …)` (gemcap shape). All LSP handlers return `jsonrpc::Result<…>`.
 
-### 8.1 Fold — `textDocument/foldingRange`
+### 8.1 Fold — `textDocument/foldingRange` (implemented — `src/fold.rs`)
 
 Natural statement-level folds: walk `Repository::statement(url)` with `preorder()`; for each statement whose `end` is `StatementEnd::Braces{ open, close }` and whose body spans >1 line, emit a `FoldingRange{ kind: Region }` from `open`'s line to `close`'s line. Statements with `end: None` (broken parse) are skipped. Collect all ranges while holding the repo read-lock; convert byte→line via the doc `Rope`.
 
-### 8.2 Format — `textDocument/formatting` (full-doc `TextEdit`)
+### 8.2 Format — `textDocument/formatting` (full-doc `TextEdit`) — implemented
+
+**Implemented** in `src/format.rs` (regenerate-from-tree + splice comments, with
+parse guards in `server.rs`); see the as-built note below the Q14 trade-off.
 
 Rules from spec, restated as an indentation model over the statement tree:
 
@@ -315,7 +361,19 @@ Comment safety (**[DONE D14]** — regenerate-from-tree + splice): the statement
 - **regenerate-from-tree + splice comments** — print each statement (leaf → `keyword [arg];`, block → header + children + `}`), then splice comments back at the right indentation using the `comments()` list (own-line comment → attach to the following statement; trailing comment after `;`/`}` → keep on the statement's line);
 - **line-preserving** — never move text across lines; only fix leading indent, spacing around keyword/`{`/`;` and trailing whitespace, keyed to enclosing statement depth.
 
-Lean: **regenerate-from-tree + splice** for v1 (it can actually enforce the rules; multi-line `"…" + "…"` strings stay intact because we copy raw arg text).
+**As built** (`format.rs`): each statement is printed `indent keyword [arg];`
+(leaf) or `header { … }` (block, children at depth+1). Argument text is copied
+from the **raw source** (`arg.range`), never `logical`; comments from
+`comments()` are spliced back — before the root, inside each body (interleaved
+with children by byte position; `direct_comments` skips comments that fall
+inside a child's span), and after the root — at the owning block's indent. Empty
+block bodies collapse to `{ }`; trailing blank lines are trimmed.
+
+`server.rs` guards **both ends** with a scratch `yrepo` compile
+(`syntax_broken`): formatting is skipped when the current source **or** the
+reformatted result carries a `ParseError`/`NotYangDocument`, so a syntax error
+can never be reshaped into something worse. Success replaces the whole document
+with a single full-range `TextEdit`.
 
 > **Q14 — regenerate-from-tree + splice vs line-preserving**
 >
@@ -336,18 +394,24 @@ Lean: **regenerate-from-tree + splice** for v1 (it can actually enforce the rule
 >
 > Lean stays **regenerate-from-tree + splice** for v1: the spec's rules are about statement *layout* (spacing + line breaks), which only full regeneration guarantees.
 
-### 8.3 Highlight — `textDocument/semanticTokens/full`
+### 8.3 Highlight — `textDocument/semanticTokens/full` (implemented — `src/semantic_token.rs`)
 
-Data: `Repository::statement(url)` gives `keyword`/`arg` spans + `StatementKind`. Semantic tokens must be **disjoint and sorted**, so color in two complementary passes:
+Data: `Repository::statement(url)` gives `keyword`/`arg` spans + `StatementKind`;
+`Repository::tokens(url)` supplies the lexical literals (**DONE D15**). Semantic
+tokens must be **disjoint and sorted**, so color in two complementary passes
+(per-`StatementKind` classes and the whole-argument overrides are in the "As
+built" block after the Q4 note below):
 
-1. **structural** — over `preorder()` statements:
-   - `keyword` span → `keyword` token;
-   - argument coloring depends on the statement class (**[DONE D4]** — map below):
-     - *atomic* args (identifier/path args — `container`/`leaf`/`list`/`prefix`/module name/`uses`/`type`…): one token over `arg.range`, type chosen by kind (e.g. `type`, `namespace`, `string`…);
-     - *composite* args (string-y or literal args — `namespace`/`description`/`reference`/`pattern`/`units`, `value`/`fraction-digits`/`range`/`length`, boolean args…): **no whole-arg token**; pass 2 colors the inside.
-2. **lexical** — from `Repository::tokens(url)` (**DONE D15**): emit tokens not already covered by pass 1 — `Comment` anywhere → `comment`; inside *composite* argument spans, `String` → `string`, `Number` → `number`, `Boolean` → `keyword`(+ readonly?), `Operator`(`+`) → `operator`. `Identifier`/`Keyword`/`Other` tokens are skipped (pass 1 already colors keywords & atomic args, and prefixed refs are covered by the whole atomic-arg token).
+1. **structural** — over `preorder()` statements: each `keyword` span → a
+   `keyword` token, plus one token over each *atomic* argument span (class by
+   `StatementKind`); *composite* args get **no** whole-arg token;
+2. **lexical** — from `tokens()`: `Comment` and `Boolean` anywhere → their class;
+   `String`/`Number`/`Operator`/`Keyword` tokens only when inside a *composite*
+   argument span.
 
-This yields the spec's scheme: distinct colors for `comment`, `+`, number literal, quoted string literal, `true`/`false` over the base keyword+argument pattern.
+This yields the spec's scheme: distinct colors for `comment`, `+`, number
+literal, quoted string literal, `true`/`false` over the base keyword+argument
+pattern.
 
 > **Q4 — what are "atomic" vs "composite" arguments?** Every statement is `keyword argument;`; the *argument is one textual span*, but semantically it is either a **name/reference** or a **literal value**, and that decides how we color it (semantic tokens must not overlap):
 >
@@ -371,115 +435,220 @@ This yields the spec's scheme: distinct colors for `comment`, `+`, number litera
 >   config true;  mandatory false;         // booleans -> keyword (+readonly)
 >   ```
 >
-> **[DONE D4]** — chosen per-`StatementKind` map (confirmed):
->
-> - **atomic** — `module`/`submodule`/`container`/`leaf`/`leaf-list`/`list`/`choice`/`case`/`anyxml`/`anydata`/`rpc`/`action`/`notification`/`grouping`/`typedef`/`identity`/`feature`/`extension`/`bit`/`enum`/`import`/`include`/`belongs-to`/`uses`/`type`/`base`/`prefix` (identifier & identifier-ref args);
-> - **composite** — `namespace`/`description`/`reference`/`organization`/`contact`/`presence`/`units`/`pattern`/`range`/`length`/`fraction-digits`/`value`/`position`/`min-elements`/`max-elements`/`default`/`when`/`must`/`path`, the boolean args (`config`/`mandatory`/`require-instance`/`yin-element`), and other keyword-valued args (`status`/`ordered-by`/`deviate`).
+> **[DONE D4]** — settled (atomic = one token over the arg; composite = lex the
+> inside). The shipped map is a **richer** per-`StatementKind` classification with
+> whole-argument overrides — see the as-built table below §8.3.
 
-Encoding pitfalls (freemarker/gemcap lessons): byte ranges → UTF-16 deltas; `delta_line`/`delta_start`; split multi-line tokens per line; sorted in document order; `result_id` = doc version. Capability advertises `full` only in v1 (skip delta/range).
+**As built** (`src/semantic_token.rs`): two passes emit disjoint, sorted items that are delta-encoded to LSP tokens. Pass 1 colors every statement `keyword` plus atomic args (one token over `arg.range`), classified by `arg_semantics(kind)`:
 
-### 8.4 Goto — `textDocument/definition`
+| class | atomic args / whole-arg use |
+| --- | --- |
+| `namespace` | `module`/`submodule`/`import`/`include`/`belongs-to`/`prefix` args |
+| `type` | `type`/`uses`/`base`/`refine` args (identifier & `prefix:name` refs) |
+| `keyword` | the `deviate` verb args (`add`/`replace`/`delete`/`not-supported`) |
+| `string` | `revision`/`revision-date` dates, `range`/`length` args whole, `key`/`unique` member lists, (un)quoted `augment` paths |
+| `variable` | data-node & definition names: `container`/`leaf`/`leaf-list`/`list`/`choice`/`case`/`anyxml`/`anydata`/`rpc`/`action`/`notification`/`grouping`/`typedef`/`identity`/`feature`/`extension`/`bit`/`enum` args |
+
+Whole-argument overrides (`whole_arg`) before the composite fallback: a bare
+(unquoted) signed-number argument (`default -10;`, `value -1;`) → `number`; an
+unquoted single word under `Unknown`/`if-feature`/`default`/`argument`/`namespace`
+→ `variable`; unquoted `units` values → `variable` **+ `readonly`** (the const
+proxy — LSP has no `const` tag). Composite args get **no** whole-arg token;
+pass 2 colors their inside.
+
+Pass 2 — lexical over `tokens()`: `Comment` anywhere and `Boolean` literals
+anywhere get their class; `String`/`Number`/`Operator`/`Keyword` tokens are
+colored only when inside a composite span (so pass-1 statement keywords are never
+double-colored). Value keywords such as `status deprecated`, `ordered-by user`
+and `min`/`max` are colored this way.
+
+Legend order: `keyword`, `namespace`, `type`, `variable`, `string`, `number`,
+`comment`, `operator`; modifiers: `readonly` only. Encoding pitfalls (see §2),
+as built: byte ranges → UTF-16 deltas
+(`delta_line`/`delta_start`); **every** multi-line token (long strings, `/* … */`
+comments) is split into one token per line; items sorted then overlaps dropped;
+`result_id` = doc version. Capability advertises `full` only (`SemanticTokensOptions`, no delta/range). Highlight behavior is pinned by the vendored `testdata/highlight` corpus + `baseline.json` (0 uncovered word tokens) and the per-shape assertions in `semantic_token::tests` (§11).
+
+### 8.4 Goto — `textDocument/definition` (implemented — `src/goto.rs`)
 
 Two stages:
 
-1. **Caret context**: `Repository::statement_at(url,row,col)` → the narrowest statement; check the caret is within its `arg.range`, then read `arg.logical` (`name()`) or `arg.path()` for the prefixed identifier / schema-nodeid. (`token_at` remains only for cheap kind/spot checks where arg text is not needed.)
+1. **Caret context**: LSP position → byte (`convert::position_to_byte` over the doc rope), then the narrowest statement under it (`Repository::statement(url)` + `narrowest_at(byte)`, the same tree `statement_at(url,row,col)` exposes); check the caret is within the statement's `arg.range` (for extension usages, within the head `keyword`), then read `arg.name()` / `arg.path()` for the prefixed identifier / schema-nodeid.
 2. **Resolve** via `Library`:
 
 | trigger (arg of) | resolve to | return |
 | --- | --- | --- |
-| `import` | `Library::module(arg)` | module file `Location`, row 0 col 0 (or nicer: its `module` header statement keyword) |
-| `include` | `Library::submodule(arg)` | submodule file |
-| `belongs-to` | parent module/submodule | file |
-| `uses [prefix:]g` | `search_grouping(module_of_prefix, g)` | `Grouping.defining` `Location` |
-| `type [prefix:]t` | builtin? → nothing; else `search_type` (or `resolve_type` step 1) | `Typedef.defining` / first `TypeStep.defining` |
-| `base [prefix:]id` (identity) | `search_identity` / `resolve_identity` | `Identity.defining` |
-| `augment /path` | `resolve_abs_schema_node_id` on each segment | target node's `defining` `Location` |
+| `import` / `belongs-to` | `Library::module(arg)` | target module's file top (`ModuleRecord::source_urls()[0]`) |
+| `include` | `Library::submodule(arg)` | submodule file top |
+| `uses [prefix:]g` | `search_grouping(module_of_prefix, g)` | `Grouping.defining` |
+| `type [prefix:]t` | builtin name → nothing; else `search_type` | `Typedef.defining` |
+| `base [prefix:]id` (identity) | `search_identity` | `Identity.defining` |
+| `if-feature [prefix:]f` | `search_feature(module_of_prefix, f)` | `Feature.defining` |
+| `default` value | identity (identityref leaves) via `search_identity`, else the enum member of the owning leaf/leaf-list/typedef's `type enumeration` | `Identity.defining` / enum arg range |
+| extension head `p:name` (`Unknown`) | `search_extension(module_of_prefix, name)` on the caret's `keyword` | `Extension.defining` |
+| `augment /path` | `resolve_abs_schema_node_id` on each segment | target node's `defining` |
 
-`Location{url,range}` is a byte range in a (possibly unopened) file → open the target URI in the client, or read the file locally to build a precise `LocationLink` with `origin_selection_range` + target selection range. **[DONE D11]** — return **`LocationLink`** (gives the client an origin range, and its target selection range can point at the exact `defining` span in the target file).
+**[DONE D11]** — returns **`LocationLink`**s. `goto::resolve` produces
+`Target{url, target_range, origin_range}` (byte ranges) for the statement under
+the caret (`root.narrowest_at(byte)`; extension usages resolve on the `keyword`
+rather than the `arg`), and `goto::to_links` maps them with the **target file's
+own** text — `server::rope_for`: open buffer or disk read — so the target
+selection range points at the exact `defining` span, with `origin_selection_range`
+set to the source argument span. Builtin `type` names are skipped. Unit tests in
+`goto.rs` cover extension-usage and `if-feature`/`default` jumps.
 
 Cross-file targets that are **not open** must still be resolvable → they must be present in the repository (§6.1 workspace scanning).
 
-### 8.5 Hover — `textDocument/hover`
+### 8.5 Hover — `textDocument/hover` (implemented — `src/hover.rs`)
 
-- **Prefixed argument** (type/grouping/identity under a prefix, or the prefix token itself): report the module that declares the prefix and the *import statement* that binds it (spec wording: "display the import/module prefix statement"). Show that statement's source text; wrap in a `yang` language string so the client highlights it.
-- **`type` argument (non-builtin)**: `resolve_type(scope, name)` → render the typedef chain (`typedefs` stack with modules) and the builtin it bottoms out at — the definition a user actually wants on hover.
-- **identity `base` / `identityref`**: `resolve_identity` → show ancestry (`root` + `bases`); optional: `derived_identities` to hint accepted values.
-- **augment argument**: split into path segments; hovering a segment shows a snapshot of that path node's statement (from the defining file, §6.1). Uses `resolve_abs_schema_node_id` per prefix/scope.
-Markdown content. Content assembled from `Location.range` slices of the defining sources (open buffer or on-disk read).
+Markdown content built from the compiled `Library` (+ raw source for import
+snippets), assembled from ranges of the defining sources (open buffer or on-disk
+read). The caret statement is located by byte (`root.narrowest_at(byte)`), and a
+hover is produced when the caret sits in the argument (or, for extension usages,
+on the `p:name` head keyword). Shipped behaviors:
 
-### 8.6 Diagnostic / Action
+- **Prefixed reference** (`type p:t` / `base p:id`, or the prefix token):
+  `prefix_to_module(scope, p)` → "prefix **`p`** → module **`m`**", plus the
+  `import` statement source that binds it — fenced as a ```yang code block so the
+  client syntax-highlights it — or "this module's own prefix".
+- **`type` argument (non-builtin)**: `resolve_type(scope, name)` → typedef chain
+  (`typedefs` stack with modules) and the builtin it bottoms out at; an
+  incomplete chain is flagged.
+- **identity `base` / `identityref`**: `resolve_identity` → `root` + `bases` ancestry.
+- **`import` module**: module name + namespace + prefix.
+- **`if-feature`**: feature name + owning module.
+- **`uses`**: grouping name + defining module (prefixed form shows the prefix binding).
+- **`augment /path`**: `resolve_abs_schema_node_id` → "target node `<name>` (kind: …)".
+- **`default`**: identity value (identityref leaves) vs an enum member of the
+  owning leaf/leaf-list/typedef's enumeration.
+- **extension usage head** (`Unknown`): extension name, module, and `argument`.
 
-See §7. `diagnostic.rs` = pull handler; on stale `compile_gen`, recompile (`spawn_blocking`) and cache `Arc<Library>`; convert `Outcome.diagnostics` (url + byte range) → LSP diagnostics keyed by url, using per-doc ropes for conversion; append the LS-side conflict-prefix check (D17) — import-cycle and friends now arrive from `yrepo`. `action.rs` / `textDocument/codeAction` is **deferred (D9)** — no quick-fixes in v1.
+Unit tests in `hover.rs` cover extension usage and `if-feature`/`default` hovers.
+`derived_identities` value hints are not shown in v1.
 
-### 8.7 Completion — `textDocument/completion` (in scope — D16)
+### 8.6 Diagnostic / Action (implemented — `src/diagnostic.rs`)
 
-`yrepo` ships the data (`type_candidates` / `identity_candidates`), so the cost is low.
+See §7. `diagnostic.rs` implements the pull handler: `Server::diagnostic` awaits
+the one-time workspace scan, takes the `snapshot()` (holding the current
+`Arc<Library>` + `Outcome.diagnostics` — no `spawn_blocking`; compile runs under
+the repo read-lock on a cache miss), converts that document's diagnostics
+(`convert`, filtered by `url`) with its rope, and appends the LS-side
+conflict-prefix check (`conflict_prefix`, code string `conflict_prefix`).
+`action.rs` / `textDocument/codeAction` is **deferred (D9)** — no quick-fixes in v1.
 
-- **Trigger context**: caret inside the `argument` of a `type` statement → `Library::type_candidates(scope_module)`; inside a `base` argument of an `identity` or of an `identityref`'s `base` substatement → `identity_candidates`. Detect via `statement_at` (statement + caret in `arg.range`).
-- **Items**: `TypeCandidate{name, kind: Builtin|Typedef, module}` → LSP `CompletionItemKind::TypeParameter` for builtins vs `Struct`/custom for typedefs; cross-module items are presented **prefix-qualified** (`b:ip`) with the owning module in `detail`; `identity_candidates` yields names (`eth`, `b:iface`).
-- Advertise `trigger_characters` (e.g. `:`) if desired; otherwise trigger purely on the statement context. Capability assembled with the other providers.
+### 8.7 Completion — `textDocument/completion` (implemented — `src/completion.rs`, D16)
+
+Backed by `yrepo`'s `Library::{type,identity}_candidates`. Capability advertises
+`trigger_characters: [":"]` — refreshing prefix-qualified candidates as the user
+types a prefix — otherwise it triggers purely on the statement context.
+
+- **Trigger context**: `root.narrowest_at(byte)` with the caret inside the
+  statement's `arg.range`; only `type` and `base` statements produce items
+  (detection mirrors goto/hover).
+- **`type` argument** → `Library::type_candidates(scope)`. Items:
+  `TypeCandidate{name, kind: Builtin|Typedef, module}` →
+  `CompletionItemKind::TypeParameter` for builtins vs `STRUCT` for typedefs;
+  `detail` = "built-in" or `"<module> (typedef)"`.
+- **`base` argument** → `Library::identity_candidates(scope)` → `ENUM` items with
+  `detail: "identity"`.
+- Cross-module prefix-qualification of candidate names is left to `yrepo`'s
+  candidate naming.
 
 ---
 
 ## 9. Configuration
 
-`config.rs`, deserialized from the client settings section **`netconf`** ([DONE D12] — the extension may later grow `rpc` (XML) / `restconf` (JSON) languages under the same roof) and re-pulled on `workspace/didChangeConfiguration` (gemcap flow: `initialized()` → `workspace/configuration`; push on change from the extension). Example keys: `netconf.indentStyle`, `netconf.indentSize`.
+**[DONE D10/D12]** `src/config.rs`, deserialized from the client settings section
+**`netconf`** (VS Code properties are camelCase). Read on `initialized()` via
+`workspace/configuration` and pushed by the extension on `netconf` setting
+changes through `workspace/didChangeConfiguration`; `Server.config` is a
+`OnceLock<Config>` that falls back to defaults before the first fetch. The
+section may later grow `rpc` (XML) / `restconf` (JSON) languages under the same roof.
 
 ```rust
-#[derive(Deserialize, Default, Clone)]
-#[serde(rename_all = "snake_case")]
-struct Config {
-    indent_style: IndentStyle,   // Spaces | Tabs, default Spaces
-    indent_size: u8,             // default 4
-    // future: include_dirs for out-of-workspace YANG, diagnostics toggles, …
+// src/config.rs
+#[derive(Deserialize, Default, Debug, Clone)]
+pub(crate) struct Config {
+    /// netconf.indentSize — spaces per indent level (default 4, clamped 1..=16).
+    #[serde(rename = "indentSize", default)]
+    indent_size: Option<u8>,
 }
 ```
+
+Only `indentSize` ships in v1 (spaces only; no tab style / `indentStyle`).
+Future keys: include dirs for out-of-workspace YANG, diagnostics toggles.
 
 ---
 
 ## 10. VS Code client
 
-Mirror `gemcap/clients/vscode`:
+`clients/vscode` — extension name/id `netconf` (publisher `k19`, v0.1.0), mirrors gemcap:
 
-- language id `yang`, `extensions: [".yang"]`; `configurationDefaults: { "[yang]": { "editor.semanticHighlighting.enabled": true } }`;
-- extension id `netconf`, settings section `netconf` ([DONE D12]); language id `yang` for `.yang` (future: `rpc`, `restconf` for XML/JSON bodies);
-- `vscode-languageclient` 10; `__DEBUG_LSP_SERVER` env override; bundled per-platform binaries in `resources/bin/` from a release workflow; debug preLaunchTask `cargo build` → `npm run compile`.
+- language id `yang`, `extensions: [".yang"]`, activation `onStartupFinished`;
+  `configurationDefaults: { "[yang]": { "editor.semanticHighlighting.enabled": true } }`.
+- settings section `netconf` ([DONE D12]); a `didChangeConfiguration` handler
+  forwards `netconf` setting changes to the server.
+- `vscode-languageclient` ^10.1; server resolution (`find_language_server`):
+  1. the `__DEBUG_LSP_SERVER` env override (used by `.vscode/launch.json` against
+     `target/debug/netconf-language-server`), else 2. the bundled per-platform
+     binary `resources/bin/netconf-language-server-<platform>`; shows an error
+     when neither exists.
+- **single workspace folder** only: multiple folders, or none, → the client
+  refuses to start (the server scans one root URI, §6.1).
+- debug: F5 `Debug Extension` runs the `npm: build-server-and-client`
+  preLaunchTask (`cargo build` + `npm run compile`) then launches an Extension
+  Development Host; an `Attach to LSP server` lldb config is also provided.
 
-Pull diagnostics require client support (`textDocument/diagnostic`) — vscode-languageclient 10 handles it; no manual `publishDiagnostics`.
+Pull diagnostics require client support (`textDocument/diagnostic`) —
+vscode-languageclient 10 handles it; no manual `publishDiagnostics`.
 
 ---
 
 ## 11. Cross-cutting concerns
 
-- **Positions**: `convert.rs` — `yrepo` byte ranges ↔ `lsp::Range` (UTF-16) via per-doc `Rope`. Careful: `row`/`col` in `token_at`/`statement_at` count Unicode scalars, not UTF-16; do not feed UTF-16 cols straight in.
-- **`#[non_exhaustive]`** on `StatementKind`, `DiagnosticCode` → wildcard arms.
+- **Positions**: `convert.rs` — `yrepo` byte ranges ↔ `lsp::Range` (UTF-16) via per-doc `Rope` (`byte_to_position`/`range_to_lsp`/`position_to_byte`/`utf16_len`). Careful: `row`/`col` in `token_at`/`statement_at` count Unicode scalars, not UTF-16; do not feed UTF-16 cols straight in. Multi-byte cursor positions clamp to the character start.
+- **`#[non_exhaustive]`** on `StatementKind`, `DiagnosticCode` → wildcard arms (`K::Unknown(_)` / `_`) in goto/hover/highlight/diagnostic.
 - **Non-goals v1**: `.yin`, network/`yangcatalog` fetch, leafref/`instance-identifier` XPath resolution, typedef *restriction-subset* semantics (RFC 7950 §9) beyond existence checks, full deviation add/delete/replace semantics, incremental repo compile, multi-workspace-folder, Zed client. *(Type-chain & identity-derivation existence resolution now come from `yrepo`.)*
-- **Logging** discipline as gemcap (window/logMessage only; deny `print!`). Errors surfaced as LSP errors, never panics on user content.
-- **Tests**: unit tests per feature module + end-to-end JSON-RPC harness over stdio (spawn the server with a scripted client) with `corpus/` of `*.yang` fixtures. Start early.
+- **Logging** discipline as gemcap (window/logMessage only via `client.rs`; `#![deny(clippy::print_stdout)]`/`print_stderr`). Errors surfaced as LSP errors, never panics on user content.
+- **Tests**: unit tests in `goto.rs`/`hover.rs` over a scripted `yrepo` repository, plus the `semantic_token.rs` suite — delta-decode helpers, multi-line token splitting, per-shape assertions (`highlight_known_shapes_are_covered`) and a **coverage regression guard** over the vendored `testdata/highlight` corpus (`highlight_coverage_matches_baseline` vs `baseline.json`: 7 files, 275 word tokens, 0 uncovered; re-bless with the ignored `bless_highlight_baseline`). Dev-only binaries `src/bin/inspect.rs`/`probe.rs` inspect `yrepo` diagnostics over a tree / single file. A full stdio JSON-RPC integration harness is still future work.
 
 ---
 
-## 12. Milestones (proposal — reorder freely)
+## 12. Implementation status
 
-1. **Skeleton**: `main.rs`/`server.rs`/`client.rs`/`config.rs`, doc store (full sync), `initialize` capabilities, empty handlers. Build + smoke JSON-RPC test.
-2. **Syntax plumbing**: D2 done (statement tree) + `comments()` + `tokens()` (D15 done). Build `text.rs`/`convert.rs` position layer only.
-3. **Highlight** (semantic tokens) — earliest visible win, exercises token path + encoding.
-4. **Fold** — exercises statement tree; small.
-5. **Format** — needs config + statement tree + `comments()`; medium.
-6. **Diagnostics** — wire `workspace.rs` scanning + `yrepo` compile cache + pull diagnostics + LS-side conflict-prefix check (D17); import-cycle & the rest come from `yrepo`. (Quick-fixes deferred — D9.) Biggest semantic chunk.
-7. **Goto**, then **Hover** — consume the `Library` (incl. `resolve_type` / `resolve_identity`).
-8. **Completion** for `type` / `base` args via `*_candidates` (D16 — in scope).
-9. **VS Code client**, packaging, e2e polish.
+All nine proposal milestones are **shipped** (v0.1.0); each feature lives in its
+own module behind a `capability()` + `handle(…)` shape and is dispatched from
+`server.rs`:
+
+| # | Workstream | Where | Notes |
+| --- | --- | --- | --- |
+| 1 | Skeleton / state / routing | `main.rs`/`server.rs`/`client.rs`/`config.rs` | FULL-sync doc store, log macros, config fetch, one-time scan |
+| 2 | Position layer | `convert.rs` | byte ↔ line/UTF-16 over the doc `Rope` |
+| 3 | Semantic tokens | `semantic_token.rs` | two passes + delta encode + corpus guard |
+| 4 | Folding | `fold.rs` | statement `{…}` region folds |
+| 5 | Formatting | `format.rs` | regenerate + splice comments, parse guards |
+| 6 | Diagnostics | `diagnostic.rs` + `workspace.rs` | pull + `refresh`, workspace scan, conflict-prefix |
+| 7 | Goto / Hover | `goto.rs`/`hover.rs` | against the §6.1 `Library` snapshot |
+| 8 | Completion | `completion.rs` | `type` / identity `base` args |
+| 9 | VS Code client & tooling | `clients/vscode`, `.vscode/*`, `src/bin/*` | F5 extension debugging; `inspect`/`probe` dev bins |
+
+Deferred (not shipped in v1): quick-fixes/`codeAction` (D9),
+`didChangeWatchedFiles` re-scan on external file changes, range formatting,
+incremental repo compile, out-of-workspace include dirs, multi-workspace-folder.
+See `TODO.md` for deferred navigation/highlight ideas.
 
 ---
 
-## 13. Open decisions (summary)
+## 13. Decision log (summary)
+
+All decisions are settled; unless noted, they are implemented in the shipped
+server. Status markers match the sections above.
 
 | # | Topic | Options | Status / lean |
 | --- | --- | --- | --- |
 | D1 | Text sync | FULL vs INCREMENTAL | ✅ **FULL v1** |
-| D2 | Syntax view source | (A) extend `yrepo` / (B) own tree-sitter / (C) targeted APIs | ✅ **DONE** (A) `7a5abdf` |
-| D3 | compile trigger/caching | lazy `spawn_blocking` + `Arc<Library>` snapshot | ✔ |
+| D2 | Syntax view source | (A) extend `yrepo` / (B) own tree-sitter / (C) targeted APIs | ✅ **DONE** (A) — consumed from `yrepo` 0.1 |
+| D3 | compile trigger/caching | lazy `spawn_blocking` + `Arc<Library>` snapshot | ✅ **done** — generation-keyed `snapshot()` cache (§6.1) |
 | D4 | Highlight arg classes (Q4) | atomic = 1 token over arg / composite = lex inside; per-`StatementKind` map | ✅ **DONE** (map in §8.3) |
 | D5 | Out-of-workspace imports | ignore v1 vs include dirs | ✅ ignore in v1 |
 | D6 | Circular import chains | error vs warn — **RFC 7950 §5.1 forbids** (Q6) | ✅ error — via yrepo `ImportCycle` |
@@ -491,13 +660,13 @@ Pull diagnostics require client support (`textDocument/diagnostic`) — vscode-l
 | D12 | Config/extension section id | `yang` vs `netconf` | ✅ **`netconf`** (future rpc/restconf) |
 | D13 | Comment spans | (a) local scanner / (b) expose from `yrepo` | ✅ **DONE** (b) `comments()` |
 | D14 | Formatter strategy | regenerate-from-tree + comment splice vs line-preserving | ✅ **regenerate + splice** |
-| D15 | Intra-arg literal spans (highlight) | (a) local scanner / (b) `tokens()` | ✅ **DONE** (b) — `tokens()` (working tree) |
-| D16 | Completion for `type`/`base` args | add to scope vs later | ✅ **in scope** |
-| D17 | LS-side diags | conflict-prefix only (import-cycle now in yrepo; dup-sibling dropped D8) | ✅ LS-side v1 |
+| D15 | Intra-arg literal spans (highlight) | (a) local scanner / (b) `tokens()` | ✅ **DONE** (b) — `tokens()` |
+| D16 | Completion for `type`/`base` args | add to scope vs later | ✅ **done** — §8.7 |
+| D17 | LS-side diags | conflict-prefix only (import-cycle now in yrepo; dup-sibling dropped D8) | ✅ **done** — `conflict_prefix` (`diagnostic.rs`) |
 
 Q&A (answered inline):
 
-- **Q4** — atomic vs composite arguments: §8.3 (Highlight) — examples + proposed map (D4).
+- **Q4** — atomic vs composite arguments: §8.3 (Highlight) — examples + settled map (D4).
 
 - **Q6** — "RFC allows some cycles?": §7 (D6) — RFC 7950 §5.1 forbids circular import chains.
 

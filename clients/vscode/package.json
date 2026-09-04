@@ -1,11 +1,11 @@
 {
   "name": "netconf",
-  "displayName": "netconf-lsp",
+  "displayName": "netconf-language-server",
   "description": "VS Code extension for writing NETCONF YANG modules",
   "publisher": "k19",
   "repository": {
     "type": "git",
-    "url": "https://github.com/trislu/netconf-lsp"
+    "url": "https://github.com/trislu/netconf-language-server"
   },
   "license": "MIT",
   "keywords": [
@@ -49,8 +49,8 @@
         "netconf.indentSize": {
           "type": "number",
           "default": 4,
-          "minimum": 1,
-          "maximum": 16,
+          "minimum": 2,
+          "maximum": 8,
           "description": "Number of spaces used per indentation level when formatting YANG"
         }
       }

@@ -1,0 +1,11 @@
+module quoted {
+  yang-version 1.1;
+  namespace "urn:quoted";
+  prefix q;
+
+  // Quoted booleans (known gap, in baseline) + unquoted (colored).
+  container state { config "false"; leaf s { type string; } }
+  container st   { config false;   leaf t { type string; } }
+  leaf musty     { mandatory "true"; type string; }
+  leaf req       { mandatory true;   type string; }
+}

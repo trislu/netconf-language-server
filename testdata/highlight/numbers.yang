@@ -1,0 +1,16 @@
+module numbers {
+  yang-version 1.1;
+  namespace "urn:numbers";
+  prefix n;
+
+  // Negative decimals / integers are colored (fixed) — incl. in typedef default.
+  typedef gain {
+    type decimal64 { fraction-digits 2; range "-63.5..-0.5"; }
+    default -3.25;
+  }
+  leaf a { type int8 { range "-16..-1"; } default -10; }
+  leaf b { type int8 { range "-48..-14"; } default -27; }
+  leaf c { type int8 { range "-3..6"; } default 0; }
+  leaf d { type enumeration { enum lo { value -1; } } default lo; }
+  leaf e { type gain; default 2.5; }
+}

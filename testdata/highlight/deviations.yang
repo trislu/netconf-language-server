@@ -1,0 +1,15 @@
+module deviations {
+  yang-version 1.1;
+  namespace "urn:deviations";
+  prefix d;
+
+  container c { leaf a { type string; } }
+
+  // `deviation`/`deviate`/verbs are keyword-colored (fixed).
+  deviation "/d:c/d:a" {
+    deviate add { default "y"; }
+    deviate replace { type string; }
+    deviate delete { default "y"; }
+    deviate not-supported;
+  }
+}

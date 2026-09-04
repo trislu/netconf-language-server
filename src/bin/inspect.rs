@@ -1,0 +1,76 @@
+//! Temporary diagnostic inspector: compile a directory of *.yang files with
+//! yrepo and summarize problems (parse errors, full-document errors, codes).
+
+use std::collections::BTreeMap;
+use std::path::Path;
+
+fn walk(root: &Path, out: &mut Vec<std::path::PathBuf>) {
+    if let Ok(entries) = std::fs::read_dir(root) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p, out);
+            } else if p.extension().is_some_and(|x| x == "yang") {
+                out.push(p);
+            }
+        }
+    }
+}
+
+fn main() {
+    let dir = std::env::args().nth(1).unwrap_or_else(|| ".".into());
+    let root = Path::new(&dir);
+    let mut files = Vec::new();
+    walk(root, &mut files);
+    files.sort();
+
+    let mut repo = yrepo::Repository::new();
+    for f in &files {
+        let Ok(text) = std::fs::read_to_string(f) else { continue };
+        repo.upsert(f.to_string_lossy().to_string(), text);
+    }
+    let out = repo.compile();
+    println!("files: {}", files.len());
+    println!("total diagnostics: {}", out.diagnostics.len());
+
+    let mut by_code: BTreeMap<String, usize> = BTreeMap::new();
+    for d in &out.diagnostics {
+        *by_code.entry(d.code.as_str().to_owned()).or_default() += 1;
+    }
+    println!("by code:");
+    for (k, v) in by_code {
+        println!("  {v:>5}  {k}");
+    }
+
+    // Files with a full-document parse error (range covers most of the file).
+    let mut full_doc = 0;
+    println!("\n-- parse diagnostics with long ranges --");
+    for d in &out.diagnostics {
+        if !matches!(
+            d.code,
+            yrepo::DiagnosticCode::ParseError | yrepo::DiagnosticCode::NotYangDocument
+        ) {
+            continue;
+        }
+        let Some(r) = &d.range else { continue };
+        if r.end - r.start > 200 {
+            full_doc += 1;
+            let url = d.url.as_deref().unwrap_or("?");
+            let text = std::fs::read_to_string(url).unwrap_or_default();
+            let frac = if text.is_empty() { 0.0 } else { (r.end - r.start) as f64 / text.len() as f64 };
+            let ctx = text
+                .get(r.start.min(text.len())..(r.start + 120).min(text.len()))
+                .map(|s| s.replace('\n', "\\n"))
+                .unwrap_or_default();
+            println!(
+                "len>200  frac={frac:.2}  {}:{}..{} :: {} :: …{}…",
+                d.code.as_str(),
+                r.start,
+                r.end,
+                url,
+                ctx
+            );
+        }
+    }
+    println!("\nfull-doc-ish parse diagnostics (range>200B): {full_doc}");
+}

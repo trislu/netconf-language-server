@@ -1,0 +1,18 @@
+module keywords {
+  yang-version 1.1;
+  namespace "urn:keywords";
+  prefix k;
+
+  container top {
+    list l {
+      key "id";
+      min-elements 1;
+      max-elements 5;
+      ordered-by user;
+      leaf id { type uint8; }
+    }
+  }
+  leaf old  { status deprecated; type string; }
+  leaf curr { status current;  type int8 { range "1..max"; } }
+  leaf big  { type string { length "1..max"; } }
+}

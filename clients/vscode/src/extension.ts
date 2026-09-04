@@ -1,13 +1,13 @@
 // MIT License — see repository LICENSE.
 //
-// Activates the netconf-lsp language client for `yang` documents.
+// Activates the netconf-language-server language client for `yang` documents.
 
 import { ExtensionContext, Uri, window, workspace } from "vscode";
 import { Executable, LanguageClient } from "vscode-languageclient/node";
 
 const extension_id = "netconf";
 const language_id = "yang";
-const server_name = "netconf-lsp";
+const server_name = "netconf-language-server";
 const output_channel = window.createOutputChannel(extension_id, { log: true });
 
 function log(msg: string) {
@@ -43,17 +43,17 @@ export async function activate(context: ExtensionContext) {
 
     const language_server = await find_language_server(context);
     if (!language_server) {
-        await window.showErrorMessage("netconf-lsp: language server not found, you may raise an issue");
+        await window.showErrorMessage("netconf-language-server: language server not found, you may raise an issue");
         return;
     }
 
     const ws = workspace.workspaceFolders ?? [];
     if (ws.length > 1) {
-        await window.showErrorMessage("netconf-lsp: multiple workspaces are not supported");
+        await window.showErrorMessage("netconf-language-server: multiple workspaces are not supported");
         return;
     }
     if (ws.length === 0) {
-        await window.showErrorMessage("netconf-lsp: open a workspace folder containing .yang files");
+        await window.showErrorMessage("netconf-language-server: open a workspace folder containing .yang files");
         return;
     }
     const root_dir = ws[0].uri;

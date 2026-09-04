@@ -1,0 +1,24 @@
+module vendor-unknown {
+  yang-version 1.1;
+  namespace "urn:vendor-unknown";
+  prefix vu;
+
+  // Vendor extension (unknown) statements: the head `prefix:name` is
+  // keyword-colored; a quoted arg is a string; a bare identifier arg
+  // (`vendor:flag on;`) is colored like a typedef name.
+  vendor:id "urn:vendor-unknown";
+  vendor:info "Vendor test module";
+  vendor:flag on;
+
+  // Extension definitions: `argument name;` unquoted is colored as a name.
+  extension vendor-thing {
+    argument name;
+  }
+
+  container c {
+    leaf a {
+      type string;
+      vendor:validate "vu:a";
+    }
+  }
+}

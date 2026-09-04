@@ -70,3 +70,23 @@ impl Workspace {
         }
     }
 }
+
+pub(crate) struct Diagnostics;
+
+impl Diagnostics {
+    /// Ask the client to re-pull diagnostics for every open document
+    /// (`workspace/diagnostic/refresh`).
+    ///
+    /// We use **pull** diagnostics, so the client only re-requests a document
+    /// when that document changes — never when the *set of known modules*
+    /// changes. That left stale results behind (e.g. "… imports … but it is
+    /// not open" computed before the workspace scan finished or before a
+    /// dependency was opened) until the user manually reopened the file.
+    /// Call this after any repo change that can affect other open documents:
+    /// a document opened/closed, or the workspace scan completing.
+    pub(crate) async fn refresh() {
+        if let Some(client) = CLIENT_INSTANCE.get() {
+            let _ = client.workspace_diagnostic_refresh().await;
+        }
+    }
+}

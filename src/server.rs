@@ -8,7 +8,7 @@ use std::sync::{
 
 use moka::future::Cache;
 use ropey::Rope;
-use tokio::sync::RwLock;
+use tokio::sync::{OnceCell, RwLock};
 use tower_lsp_server::{
     Client, LanguageServer,
     jsonrpc::{self, Error},
@@ -27,7 +27,7 @@ use tower_lsp_server::{
 use yrepo::{Library, Statement, StatementKind};
 
 use crate::{
-    client::{self, Window, Workspace},
+    client::{self, Diagnostics, Window, Workspace},
     completion, config::Config, convert, diagnostic, document::Document, fold, format, goto,
     hover, info, semantic_token, warning, workspace,
 };
@@ -46,6 +46,7 @@ pub(crate) struct Server {
     config: OnceLock<Config>,
     generation: AtomicU64,
     snap: RwLock<Option<Snapshot>>,
+    scan: OnceCell<()>,
 }
 
 impl Server {
@@ -58,6 +59,7 @@ impl Server {
             config: OnceLock::new(),
             generation: AtomicU64::new(0),
             snap: RwLock::new(None),
+            scan: OnceCell::new(),
         }
     }
 
@@ -109,15 +111,40 @@ impl Server {
         self.bump();
     }
 
+    /// Make sure the on-disk `.yang` workspace has been scanned **once** before
+    /// serving semantics. Runs the scan lazily: whoever needs it first starts
+    /// it (`initialized`, or an early `textDocument/diagnostic` pull that beats
+    /// it), and every other caller waits for the same single scan to finish.
+    /// This prevents a first-open diagnostic from being computed against a
+    /// half-scanned repository (which used to flash spurious "import not
+    /// open" / "augment target not found" errors until a refresh arrived).
+    async fn ensure_scanned(&self) {
+        if self.root_uri.get().is_none() {
+            return;
+        }
+        // Note: do NOT `self.scan.clone()` here — tokio's `OnceCell::clone`
+        // returns an *independent* cell, so cloning would run the scan once per
+        // call. Call `get_or_init` on `&self.scan` directly: concurrent callers
+        // share the one cell and wait for the single init.
+        self.scan
+            .get_or_init(|| async {
+                self.scan_workspace().await;
+            })
+            .await;
+    }
+
     /// Scan the workspace and upsert every on-disk `.yang` file that is not an
     /// open (dirty) buffer.
     async fn scan_workspace(&self) {
         let Some(root) = self.root_uri.get() else {
+            Window::log(warning!("scan skipped: no workspace root")).await;
             return;
         };
         let Some(root_path) = workspace::url_to_path(&root.to_string()) else {
+            Window::log(warning!("scan skipped: cannot resolve root path")).await;
             return;
         };
+        let mut scanned = 0usize;
         for path in workspace::walk_yang_files(&root_path) {
             let Some(url) = workspace::path_to_url(&path) else {
                 continue;
@@ -128,9 +155,15 @@ impl Server {
             }
             if let Ok(text) = std::fs::read_to_string(&path) {
                 self.repo.write().await.upsert(url, text);
+                scanned += 1;
             }
         }
         self.bump();
+        Window::log(info!(format!("workspace scan loaded {scanned} yang files"))).await;
+        // Documents opened while the scan was still running may have stale
+        // pull-diagnostics; make the client re-pull now that the full module
+        // set is known.
+        Diagnostics::refresh().await;
     }
 
     /// Compile the repository (cached by generation). Re-compiles only when a
@@ -195,7 +228,7 @@ impl LanguageServer for Server {
         }
         Ok(InitializeResult {
             server_info: Some(ServerInfo {
-                name: "netconf-lsp".to_owned(),
+                name: "netconf-language-server".to_owned(),
                 version: Some(env!("CARGO_PKG_VERSION").to_string()),
             }),
             capabilities: ServerCapabilities {
@@ -218,7 +251,7 @@ impl LanguageServer for Server {
     }
 
     async fn initialized(&self, _: InitializedParams) {
-        Window::log(info!("[netconf-lsp] initialized.")).await;
+        Window::log(info!("[netconf-language-server] initialized.")).await;
         if let Some(uri) = self.root_uri.get() {
             let item = ConfigurationItem {
                 scope_uri: Some(uri.clone()),
@@ -231,12 +264,13 @@ impl LanguageServer for Server {
                 Window::log(info!(format!("config: {:?}", config))).await;
                 let _ = self.config.set(config);
             }
-            self.scan_workspace().await;
         }
+        // Idempotent; an early diagnostic pull may already have scanned.
+        self.ensure_scanned().await;
     }
 
     async fn shutdown(&self) -> jsonrpc::Result<()> {
-        Window::log(info!("[netconf-lsp] shutdown")).await;
+        Window::log(info!("[netconf-language-server] shutdown")).await;
         Ok(())
     }
 
@@ -251,6 +285,8 @@ impl LanguageServer for Server {
         Window::log(info!(format!("did_open: {uri}"))).await;
         self.upsert_doc(&uri, &params.text_document.text, params.text_document.version)
             .await;
+        // A newly opened module can satisfy imports of already-open documents.
+        Diagnostics::refresh().await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -269,6 +305,8 @@ impl LanguageServer for Server {
         let uri = params.text_document.uri.to_string();
         Window::log(info!(format!("did_close: {uri}"))).await;
         self.close_doc(&uri).await;
+        // A module going away may break other documents' imports.
+        Diagnostics::refresh().await;
     }
 
     async fn semantic_tokens_full(
@@ -366,7 +404,7 @@ impl LanguageServer for Server {
                 return Ok(None);
             };
             let doc = self.open_doc(&uri).await?;
-            let targets = goto::resolve(root, byte, &scope, lib).unwrap_or_default();
+            let targets = goto::resolve(&doc.rope, root, &uri, byte, &scope, lib).unwrap_or_default();
             (targets, doc.rope.clone())
         };
 
@@ -446,6 +484,9 @@ impl LanguageServer for Server {
         params: DocumentDiagnosticParams,
     ) -> jsonrpc::Result<DocumentDiagnosticReportResult> {
         let uri = params.text_document.uri.to_string();
+        // Wait for (or run) the initial workspace scan so the very first pull
+        // already sees the whole module set — no transient import errors.
+        self.ensure_scanned().await;
         let snap = self.snapshot().await;
         let generation = snap.generation;
         let rope = self.rope_for(&uri).await.unwrap_or_else(|| Rope::from_str(""));

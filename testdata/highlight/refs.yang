@@ -1,0 +1,27 @@
+module refs {
+  yang-version 1.1;
+  namespace "urn:refs";
+  prefix r;
+
+  feature fast;
+
+  container top {
+    list item {
+      key "name kind";
+      unique "serial";
+      leaf name { type string; }
+      leaf kind { type string; }
+      leaf serial { type string; }
+    }
+    leaf flag-on { if-feature fast; type boolean; }
+  }
+
+  // Quoted augment target -> colored as a string (fixed regression).
+  augment "/r:top" {
+    leaf via-quoted { type string; }
+  }
+  // Unquoted augment target -> identifier tokens (known gap, in baseline).
+  augment /r:top/r:item {
+    leaf extra { type string; units milliseconds; }
+  }
+}

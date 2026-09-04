@@ -369,7 +369,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "netconf-lsp"
+name = "netconf-language-server"
 version = "0.1.0"
 dependencies = [
  "moka",
@@ -863,9 +863,9 @@ checksum = "ca0d1bf6fdd806e43ae5198f82f527056d359def39e54e67a0f478ac09dac081"
 
 [[package]]
 name = "tree-sitter-yang"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "404cfe0a161878a56013e2daccc37265b6b5e95dd510097b9b6768f6a03f1032"
+checksum = "99a7acbb1c71e164ed38d1f134c39ba925e6a4715bbe9c684e7f18c515778c2b"
 dependencies = [
  "cc",
  "codegen",
@@ -980,6 +980,8 @@ checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 [[package]]
 name = "yrepo"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7ce9057d3fdf759660545a6457b2635e4614bce351470ffc52ecaac423c9f63"
 dependencies = [
  "tree-sitter",
  "tree-sitter-yang",

@@ -1,0 +1,31 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Extension",
+            "type": "extensionHost",
+            "request": "launch",
+            "debugWebWorkerHost": true,
+            "args": [
+                "--extensionDevelopmentPath=${workspaceFolder}/clients/vscode"
+            ],
+            "outFiles": [
+                "${workspaceFolder}/clients/vscode/**/*"
+            ],
+            "env": {
+                "__DEBUG_LSP_SERVER": "${workspaceFolder}/target/debug/netconf-lsp"
+            },
+            "autoAttachChildProcesses": true,
+            "preLaunchTask": "npm: build-server-and-client"
+        },
+        {
+            "name": "Attach to LSP server",
+            "type": "lldb",
+            "request": "attach",
+            "program": "${workspaceFolder}/target/debug/netconf-lsp",
+            "sourceLanguages": [
+                "rust"
+            ]
+        }
+    ]
+}

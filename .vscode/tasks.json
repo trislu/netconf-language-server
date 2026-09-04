@@ -1,0 +1,69 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "npm: install",
+            "type": "npm",
+            "script": "install",
+            "path": "clients/vscode",
+            "group": "build",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "silent",
+                "focus": false
+            }
+        },
+        {
+            "label": "watch",
+            "dependsOn": [
+                "npm: install",
+                "npm: watch:tsc",
+                "npm: watch:esbuild"
+            ],
+            "presentation": {
+                "reveal": "never"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "type": "npm",
+            "script": "watch:esbuild",
+            "group": "build",
+            "problemMatcher": "$esbuild-watch",
+            "isBackground": true,
+            "label": "npm: watch:esbuild",
+            "presentation": {
+                "group": "watch",
+                "reveal": "never"
+            },
+            "path": "clients/vscode"
+        },
+        {
+            "type": "npm",
+            "script": "watch:tsc",
+            "group": "build",
+            "problemMatcher": "$tsc-watch",
+            "isBackground": true,
+            "label": "npm: watch:tsc",
+            "presentation": {
+                "group": "watch",
+                "reveal": "never"
+            },
+            "path": "clients/vscode"
+        },
+        {
+            "label": "npm: build-server-and-client",
+            "type": "npm",
+            "script": "build-server-and-client",
+            "path": "clients/vscode",
+            "group": "build",
+            "problemMatcher": [],
+            "dependsOn": [
+                "npm: install"
+            ]
+        }
+    ]
+}

@@ -1,0 +1,7 @@
+/node_modules
+pkg
+out
+dist
+resources/bin/*
+!resources/bin/index.ad
+tsconfig.tsbuildinfo

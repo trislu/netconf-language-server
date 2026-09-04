@@ -1,0 +1,94 @@
+{
+  "name": "netconf",
+  "displayName": "netconf-lsp",
+  "description": "VS Code extension for writing NETCONF YANG modules",
+  "publisher": "k19",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/trislu/netconf-lsp"
+  },
+  "license": "MIT",
+  "keywords": [
+    "netconf",
+    "yang",
+    "lsp",
+    "rust"
+  ],
+  "extensionKind": [
+    "workspace",
+    "ui"
+  ],
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.125.0"
+  },
+  "categories": [
+    "Formatters",
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "yang",
+        "aliases": [
+          "yang",
+          "YANG"
+        ],
+        "extensions": [
+          ".yang"
+        ]
+      }
+    ],
+    "configuration": {
+      "title": "NETCONF",
+      "properties": {
+        "netconf.indentSize": {
+          "type": "number",
+          "default": 4,
+          "minimum": 1,
+          "maximum": 16,
+          "description": "Number of spaces used per indentation level when formatting YANG"
+        }
+      }
+    },
+    "configurationDefaults": {
+      "[yang]": {
+        "editor.semanticHighlighting.enabled": true
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vscode-test",
+    "build-server-and-client": "cd ../.. && cargo build && cd clients/vscode && npm run compile"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^10.1.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.125.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "24.x",
+    "typescript-eslint": "^8.61.1",
+    "eslint": "^10.5.0",
+    "esbuild": "^0.28.1",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^6.0.3",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.0.0"
+  }
+}

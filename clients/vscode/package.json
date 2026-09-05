@@ -8,6 +8,7 @@
     "url": "https://github.com/trislu/netconf-language-server"
   },
   "license": "MIT",
+  "icon": "resources/images/icon.png",
   "keywords": [
     "netconf",
     "yang",

@@ -615,9 +615,9 @@ mod tests {
         let uncovered = gaps.len();
 
         let mut by_stmt: Vec<_> = by_stmt.into_iter().collect();
-        by_stmt.sort_by(|a, b| b.1.cmp(&a.1));
+        by_stmt.sort_by_key(|a| std::cmp::Reverse(a.1));
         let mut by_file: Vec<_> = by_file.into_iter().collect();
-        by_file.sort_by(|a, b| b.1.cmp(&a.1));
+        by_file.sort_by_key(|a| std::cmp::Reverse(a.1));
 
         let mut lines: Vec<String> = Vec::new();
         lines.push("# YANG semantic-token coverage report".into());

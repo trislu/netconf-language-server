@@ -11,14 +11,19 @@
     <interface>
       <name>eth0</name>
       <enabled>true</enabled>
-      <admin-down xmlns="urn:example:demo">false</admin-down>
+      <admin-down xmlns="urn:example:demo">1234</admin-down>
+    </interface>
+    <interface>
+      <name>eth1</name>
+      <enabled>ffff</enabled>
+      <admin-down xmlns="urn:example:none">false</admin-down>
     </interface>
   </interfaces>
   <system xmlns="urn:example:demo">
     <hostname>switch1</hostname>
     <user>
       <name>admin</name>
-      <speed>1000</speed>
+      <speed>99999999</speed>
     </user>
   </system>
 </config>

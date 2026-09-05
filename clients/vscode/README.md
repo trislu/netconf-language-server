@@ -5,9 +5,42 @@ VS Code extension for writing NETCONF **YANG** modules with the
 
 ## Features
 
-- semantic highlighting, statement-level folding, document formatting
-- go-to-definition, hover, completion
-- pull-based diagnostics (errors/warnings from `yrepo`)
+Authoring **YANG modules** (semantic highlighting, folding, formatting,
+goto/hover, completion, pull diagnostics) plus **NETCONF instance documents** —
+XML envelopes/`<config>` payloads and RFC 7951 JSON — with content-sniffed
+recognition (unmatched files stay dormant), diagnostics on elements/members,
+leaf *value* validation, and RFC 7951/XML completion. The editor also offers
+`NETCONF: Insert …` commands for `hello` / `get-config` / `edit-config` /
+`<config>` payloads.
+
+See the [detailed LSP features guide](../docs/features.md) in the repo.
+
+### Demo
+
+**Read — diagnostics & hover** over **YANG**, **XML (NETCONF)**, and **RFC 7951
+JSON**:
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/clients/vscode/resources/images/netconf-vscode-yang-20260905.png" alt="YANG diagnostics & hover" width="720">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/clients/vscode/resources/images/netconf-vscode-xml-20260905.png" alt="XML (NETCONF) diagnostics & hover" width="720">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/clients/vscode/resources/images/netconf-vscode-json-20260905.png" alt="RFC 7951 JSON diagnostics & hover" width="720">
+</p>
+
+**Write — completion** on XML elements and JSON members:
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/clients/vscode/resources/images/netconf-vscode-xcomp-20260905.png" alt="XML completion" width="720">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/clients/vscode/resources/images/netconf-vscode-jcomp-20260905.png" alt="JSON completion" width="720">
+</p>
 
 ## Configuration
 

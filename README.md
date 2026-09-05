@@ -20,6 +20,33 @@ with a VS Code extension.
 
 ## LSP features
 
+### Demo
+
+**Read — diagnostics & hover** over **YANG**, **XML (NETCONF)**, and **RFC 7951
+JSON**:
+
+<p align="center">
+  <img src="clients/vscode/resources/images/netconf-vscode-yang-20260905.png" alt="YANG diagnostics & hover" width="720">
+</p>
+
+<p align="center">
+  <img src="clients/vscode/resources/images/netconf-vscode-xml-20260905.png" alt="XML (NETCONF) diagnostics & hover" width="720">
+</p>
+
+<p align="center">
+  <img src="clients/vscode/resources/images/netconf-vscode-json-20260905.png" alt="RFC 7951 JSON diagnostics & hover" width="720">
+</p>
+
+**Write — completion** on XML elements and JSON members:
+
+<p align="center">
+  <img src="clients/vscode/resources/images/netconf-vscode-xcomp-20260905.png" alt="XML completion" width="720">
+</p>
+
+<p align="center">
+  <img src="clients/vscode/resources/images/netconf-vscode-jcomp-20260905.png" alt="JSON completion" width="720">
+</p>
+
 ### YANG authoring
 
 | Feature | Status |
@@ -46,6 +73,8 @@ NETCONF/`netconf` docs get the features below; anything unmatched stays dormant.
 | XML write: NETCONF templates (`hello`, `get-config`, `edit-config`, `config`) | ✅ (M2) |
 | Completion: XML elements (keys/xmlns) & JSON members (RFC 7951 qualifiers) | ✅ (M2/M4) |
 | Leaf *value* validation (scalar-only; `union` silent) + typed defaults | ✅ (M5) |
+
+**Guides:** [LSP features (detailed)](docs/features.md) · [Architecture & decisions](docs/architecture.md)
 
 ## Building
 

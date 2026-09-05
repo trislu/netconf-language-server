@@ -1,42 +1,51 @@
 module example-demo {
-  yang-version 1.1;
-  namespace "urn:example:demo";
-  prefix d;
-
-  import example-ietf-interfaces {
-    prefix if;
-  }
-
-  organization "Example";
-  description "Demo module: augment + grouping + typedef usage.";
-
-  revision 2026-01-01;
-
-  typedef speed {
-    type uint32 {
-      range "1..100000";
+    yang-version 1.1;
+    namespace "urn:example:demo";
+    prefix d;
+    import example-ietf-interfaces {
+        prefix if;
     }
-    units "Mbps";
-    description "Interface speed.";
-  }
-
-  grouping endpoint {
-    leaf ip { type string; }
-    leaf port { type uint16; }
-  }
-
-  container system {
-    description "Demo " + "container.";
-    uses endpoint;
-    leaf hostname { type string; }
-    list user {
-      key "name";
-      leaf name { type string; }
-      leaf speed { type speed; }
+    import foo {
+        prefix foo;
     }
-  }
-
-  augment "/if:interfaces/if:interface" {
-    leaf admin-down { type boolean; default false; }
-  }
+    organization "Example";
+    description "Demo module: augment + grouping + typedef usage.";
+    revision 2026-01-01;
+    typedef speed {
+        type uint32 {
+            range "1..100000";
+        }
+        units "Mbps";
+        description "Interface speed.";
+    }
+    grouping endpoint {
+        leaf ip {
+            type string;
+        }
+        leaf port {
+            type uint16;
+        }
+    }
+    container system {
+        description "Demo " + "container.";
+        uses endpoint;
+        leaf hostname {
+            type string;
+        }
+        list user {
+            key "name";
+            leaf name {
+                type string;
+            }
+            leaf speed {
+                type speed;
+            }
+        }
+    }
+    augment "/if:interfaces/if:interface" {
+        leaf admin-down {
+            type boolean;
+            default false;
+        }
+    }
 }

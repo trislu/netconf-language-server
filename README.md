@@ -1,4 +1,9 @@
-# netconf-language-server
+# NETCONF Language Server
+
+[![Rust CI](https://github.com/trislu/netconf-language-server/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/trislu/netconf-language-server/actions/workflows/rust-ci.yml)
+[![Latest Version](https://img.shields.io/crates/v/netconf-language-server.svg)](https://crates.io/crates/netconf-language-server)
+[![License](https://img.shields.io/crates/l/netconf-language-server.svg)](LICENSE)
+[![VS Code Marketplace](https://img.shields.io/vscode-marketplace/v/k19.netconf.svg)](https://marketplace.visualstudio.com/items?itemName=k19.netconf)
 
 A [language server](https://microsoft.github.io/language-server-protocol/) for
 authoring **NETCONF / YANG** — YANG modules (`*.yang`) and NETCONF **instance

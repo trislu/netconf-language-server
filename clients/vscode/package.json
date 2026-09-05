@@ -1,7 +1,7 @@
 {
   "name": "netconf",
-  "displayName": "netconf-language-server",
-  "description": "VS Code extension for writing NETCONF YANG modules",
+  "displayName": "NETCONF Language Server",
+  "description": "VS Code extension for reading and writing NETCONF/YANG files",
   "publisher": "k19",
   "repository": {
     "type": "git",

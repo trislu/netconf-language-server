@@ -1,7 +1,12 @@
-# netconf-language-server (VS Code)
+# NETCONF Language Server (for VS Code)
+
+[![Version](https://img.shields.io/vscode-marketplace/v/k19.netconf.svg)](https://marketplace.visualstudio.com/items?itemName=k19.netconf)
+[![Installs](https://img.shields.io/vscode-marketplace/i/k19.netconf.svg)](https://marketplace.visualstudio.com/items?itemName=k19.netconf)
+[![Rating](https://img.shields.io/vscode-marketplace/r/k19.netconf.svg)](https://marketplace.visualstudio.com/items?itemName=k19.netconf)
+[![License](https://img.shields.io/github/license/trislu/netconf-language-server.svg)](../../LICENSE)
 
 VS Code extension for writing NETCONF **YANG** modules with the
-[netconf-language-server](../../README.md) language server.
+[NETCONF Language Server](../../README.md).
 
 ## Features
 

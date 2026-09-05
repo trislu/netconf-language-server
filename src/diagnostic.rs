@@ -59,7 +59,10 @@ pub(crate) fn conflict_prefix(rope: &Rope, root: Option<&Statement>) -> Vec<Diag
     if let Some(own) = root.find_one(StatementKind::Prefix)
         && let Some(arg) = &own.arg
     {
-        seen.push((arg.name().to_owned(), convert::range_to_lsp(rope, arg.range.clone())));
+        seen.push((
+            arg.name().to_owned(),
+            convert::range_to_lsp(rope, arg.range.clone()),
+        ));
     }
 
     for import in root.find(&[StatementKind::Import]) {

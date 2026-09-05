@@ -14,9 +14,25 @@ use crate::convert;
 
 /// The RFC 7950 built-in type names (used to skip goto on `type` args).
 const BUILTIN_TYPES: &[&str] = &[
-    "binary", "bits", "boolean", "decimal64", "empty", "enumeration",
-    "identityref", "instance-identifier", "int8", "int16", "int32", "int64",
-    "leafref", "string", "uint8", "uint16", "uint32", "uint64", "union",
+    "binary",
+    "bits",
+    "boolean",
+    "decimal64",
+    "empty",
+    "enumeration",
+    "identityref",
+    "instance-identifier",
+    "int8",
+    "int16",
+    "int32",
+    "int64",
+    "leafref",
+    "string",
+    "uint8",
+    "uint16",
+    "uint32",
+    "uint64",
+    "union",
 ];
 
 /// A resolved jump target (byte ranges in `url`).
@@ -40,9 +56,7 @@ fn owner_data_node(root: &Statement, byte: usize) -> Option<&Statement> {
     use StatementKind as K;
     let mut best = None;
     for s in root.preorder() {
-        if s.range.contains(&byte)
-            && matches!(s.kind, K::Leaf | K::LeafList | K::Typedef)
-        {
+        if s.range.contains(&byte) && matches!(s.kind, K::Leaf | K::LeafList | K::Typedef) {
             best = Some(s);
         }
     }
@@ -53,9 +67,10 @@ fn owner_data_node(root: &Statement, byte: usize) -> Option<&Statement> {
 /// enumeration`, if any.
 fn enum_member_arg(owner: &Statement, name: &str) -> Option<Range<usize>> {
     use StatementKind as K;
-    let ty = owner.children.iter().find(|c| {
-        c.kind == K::Type && c.arg.as_ref().is_some_and(|a| a.name() == "enumeration")
-    })?;
+    let ty = owner
+        .children
+        .iter()
+        .find(|c| c.kind == K::Type && c.arg.as_ref().is_some_and(|a| a.name() == "enumeration"))?;
     let en = ty
         .children
         .iter()
@@ -270,7 +285,10 @@ mod tests {
             .unwrap()
             .to_string();
         assert_eq!(name, "info");
-        assert_eq!(targets[0].origin_range, root.narrowest_at(byte).unwrap().keyword.clone().unwrap());
+        assert_eq!(
+            targets[0].origin_range,
+            root.narrowest_at(byte).unwrap().keyword.clone().unwrap()
+        );
     }
 
     const FEAT: &str = "module fmod {\n  namespace \"urn:f\";\n  prefix f;\n\
@@ -282,7 +300,10 @@ mod tests {
     }\n";
 
     fn text_at(def: &str, range: std::ops::Range<usize>) -> String {
-        Rope::from_str(def).get_byte_slice(range).unwrap().to_string()
+        Rope::from_str(def)
+            .get_byte_slice(range)
+            .unwrap()
+            .to_string()
     }
 
     #[test]
@@ -309,9 +330,9 @@ mod tests {
 
         // default identity -> identity definition.
         let b = FEAT.find("default auto-id;").unwrap() + "default ".len();
-        let t = resolve(&rope, &root, "/fmod.yang", b, "fmod", &lib).expect("identity default goto");
+        let t =
+            resolve(&rope, &root, "/fmod.yang", b, "fmod", &lib).expect("identity default goto");
         assert_eq!(t.len(), 1);
         assert_eq!(text_at(FEAT, t[0].target_range.clone()), "auto-id");
     }
 }
-

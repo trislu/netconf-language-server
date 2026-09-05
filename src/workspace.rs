@@ -33,6 +33,34 @@ pub(crate) fn walk_yang_files(root: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// The language a document belongs to, decided by its file extension.
+///
+/// `yang` drives the YANG repo/snapshot path; `xml`/`json` are candidate
+/// NETCONF instance documents (routed to the instance path — never upserted
+/// into `yrepo`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DocLang {
+    Yang,
+    Xml,
+    Json,
+    Other,
+}
+
+/// Classify a document by its file extension (M0 language routing).
+pub(crate) fn doc_lang(url: &str) -> DocLang {
+    match url_to_path(url).and_then(|p| p.extension().map(|e| e.to_string_lossy().into_owned())) {
+        Some(e) if e == "yang" => DocLang::Yang,
+        Some(e) if e == "xml" => DocLang::Xml,
+        Some(e) if e == "json" => DocLang::Json,
+        _ => DocLang::Other,
+    }
+}
+
+/// Whether a document is a YANG module (the only docs `yrepo` sees).
+pub(crate) fn is_yang(url: &str) -> bool {
+    doc_lang(url) == DocLang::Yang
+}
+
 /// Best-effort file URI string for a path.
 pub(crate) fn path_to_url(path: &Path) -> Option<String> {
     Uri::from_file_path(path).map(|u| u.as_str().to_owned())

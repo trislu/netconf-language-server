@@ -9,9 +9,25 @@ use yrepo::{Library, Statement, StatementKind};
 
 /// RFC 7950 built-in type names (skip hover chains for these).
 const BUILTIN_TYPES: &[&str] = &[
-    "binary", "bits", "boolean", "decimal64", "empty", "enumeration",
-    "identityref", "instance-identifier", "int8", "int16", "int32", "int64",
-    "leafref", "string", "uint8", "uint16", "uint32", "uint64", "union",
+    "binary",
+    "bits",
+    "boolean",
+    "decimal64",
+    "empty",
+    "enumeration",
+    "identityref",
+    "instance-identifier",
+    "int8",
+    "int16",
+    "int32",
+    "int64",
+    "leafref",
+    "string",
+    "uint8",
+    "uint16",
+    "uint32",
+    "uint64",
+    "union",
 ];
 
 fn code_fence(text: &str) -> String {
@@ -42,7 +58,13 @@ fn binding_snippet(
 }
 
 /// A prefixed reference: show what module the prefix binds to.
-fn prefixed_ref(rope: &Rope, root: &Statement, scope: &str, lib: &Library, prefix: &str) -> Option<String> {
+fn prefixed_ref(
+    rope: &Rope,
+    root: &Statement,
+    scope: &str,
+    lib: &Library,
+    prefix: &str,
+) -> Option<String> {
     let mut out = format!("prefix **`{prefix}`**");
     if let Some(module) = lib.prefix_to_module(scope, prefix) {
         out.push_str(&format!(" → module **`{module}`**"));
@@ -70,9 +92,10 @@ fn data_node_owner(root: &Statement, byte: usize) -> Option<&Statement> {
 /// The name of the `enum <name>` member of `owner`'s `type enumeration`, if any.
 fn enum_owner_name(owner: &Statement, name: &str) -> Option<String> {
     use StatementKind as K;
-    let ty = owner.children.iter().find(|c| {
-        c.kind == K::Type && c.arg.as_ref().is_some_and(|a| a.name() == "enumeration")
-    })?;
+    let ty = owner
+        .children
+        .iter()
+        .find(|c| c.kind == K::Type && c.arg.as_ref().is_some_and(|a| a.name() == "enumeration"))?;
     let en = ty
         .children
         .iter()
@@ -164,7 +187,10 @@ pub(crate) fn handle(
         }
         K::Base => {
             let r = lib.resolve_identity(scope, name)?;
-            let mut out = format!("**identity** `{}` (module `{}`)", r.root.name, r.root.module);
+            let mut out = format!(
+                "**identity** `{}` (module `{}`)",
+                r.root.name, r.root.module
+            );
             for b in &r.bases {
                 out.push_str(&format!("\n- base: `{}` (module `{}`)", b.name, b.module));
             }
@@ -221,7 +247,11 @@ pub(crate) fn handle(
                 return None;
             }
             let node = lib.resolve_abs_schema_node_id(scope, &path)?;
-            Some(format!("target node **`{}`** (kind: {:?})", node.name(), node.kind()))
+            Some(format!(
+                "target node **`{}`** (kind: {:?})",
+                node.name(),
+                node.kind()
+            ))
         }
         _ => None,
     }

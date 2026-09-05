@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<!--
+  Example NETCONF <config> payload (M1 demo) against the modules in this
+  directory: example-ietf-interfaces.yang + example-demo.yang (which augments
+  /if:interfaces/if:interface with <admin-down> in urn:example:demo).
+  Goto/hover: hover an element name → the YANG leaf/container; diagnostics
+  flag unknown elements / wrong namespaces.
+-->
+<config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+  <interfaces xmlns="urn:example:interfaces">
+    <interface>
+      <name>eth0</name>
+      <enabled>true</enabled>
+      <admin-down xmlns="urn:example:demo">false</admin-down>
+    </interface>
+  </interfaces>
+  <system xmlns="urn:example:demo">
+    <hostname>switch1</hostname>
+    <user>
+      <name>admin</name>
+      <speed>1000</speed>
+    </user>
+  </system>
+</config>

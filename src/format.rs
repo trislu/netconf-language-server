@@ -22,7 +22,9 @@ fn indent_of(depth: usize, width: u32) -> String {
 }
 
 fn slice(rope: &Rope, range: Range<usize>) -> String {
-    rope.get_byte_slice(range).map(|s| s.to_string()).unwrap_or_default()
+    rope.get_byte_slice(range)
+        .map(|s| s.to_string())
+        .unwrap_or_default()
 }
 
 fn emit_comment(out: &mut Vec<String>, comment: &Comment, indent: &str) {
@@ -36,10 +38,7 @@ fn emit_comment(out: &mut Vec<String>, comment: &Comment, indent: &str) {
 }
 
 /// Direct comments of `stmt`: start is inside its body but inside no child.
-fn direct_comments<'c>(
-    stmt: &Statement,
-    comments: &'c [Comment],
-) -> Vec<&'c Comment> {
+fn direct_comments<'c>(stmt: &Statement, comments: &'c [Comment]) -> Vec<&'c Comment> {
     let Some(body) = stmt.body() else {
         return vec![];
     };
@@ -64,7 +63,11 @@ fn gen_stmt(
     comments: &[Comment],
 ) {
     let indent = indent_of(depth, width);
-    let kw = stmt.keyword.as_ref().map(|r| slice(rope, r.clone())).unwrap_or_default();
+    let kw = stmt
+        .keyword
+        .as_ref()
+        .map(|r| slice(rope, r.clone()))
+        .unwrap_or_default();
     let arg_part = stmt
         .arg
         .as_ref()

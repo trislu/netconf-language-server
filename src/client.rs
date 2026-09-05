@@ -90,3 +90,18 @@ impl Diagnostics {
         }
     }
 }
+
+pub(crate) struct Edits;
+
+impl Edits {
+    /// Apply a server-initiated `WorkspaceEdit` (used by the M2 template
+    /// insert command).
+    pub(crate) async fn apply(edit: tower_lsp_server::ls_types::WorkspaceEdit) {
+        let Some(client) = CLIENT_INSTANCE.get() else {
+            return;
+        };
+        if let Err(e) = client.apply_edit(edit).await {
+            Window::log(warning!(format!("apply_edit failed: {e}"))).await;
+        }
+    }
+}

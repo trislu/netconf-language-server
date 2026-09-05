@@ -205,7 +205,9 @@ fn encode(rope: &Rope, items: &[(Class, u32, Range<usize>)]) -> Vec<SemanticToke
 
 /// Is `range` fully inside one of `regions`?
 fn inside(range: &Range<usize>, regions: &[Range<usize>]) -> bool {
-    regions.iter().any(|r| range.start >= r.start && range.end <= r.end)
+    regions
+        .iter()
+        .any(|r| range.start >= r.start && range.end <= r.end)
 }
 
 /// Does `raw` (the source text of a statement argument) form a single bare
@@ -415,7 +417,9 @@ mod tests {
         }
         let start = rope.line_to_byte(i) + byte;
         let end = (start + (len as usize)).min(rope.len_bytes());
-        rope.get_byte_slice(start..end).map(|s| s.to_string()).unwrap_or_default()
+        rope.get_byte_slice(start..end)
+            .map(|s| s.to_string())
+            .unwrap_or_default()
     }
 
     /// Byte range of an absolute `(line, utf16 col, utf16 len)` token.
@@ -510,7 +514,9 @@ mod tests {
         let mut repo = yrepo::Repository::new();
         let mut docs: Vec<(PathBuf, Rope)> = Vec::new();
         for f in &files {
-            let Ok(text) = std::fs::read_to_string(f) else { continue };
+            let Ok(text) = std::fs::read_to_string(f) else {
+                continue;
+            };
             repo.upsert(f.to_string_lossy().to_string(), text.clone());
             docs.push((f.clone(), Rope::from_str(&text)));
         }
@@ -522,7 +528,9 @@ mod tests {
         for (path, rope) in &docs {
             let url = path.to_string_lossy().to_string();
             let root_stmt = repo.statement(&url);
-            let Some(toks) = repo.tokens(&url) else { continue };
+            let Some(toks) = repo.tokens(&url) else {
+                continue;
+            };
 
             // Decoded semantic token byte ranges for this document.
             let sem = match handle(rope, root_stmt, toks) {
@@ -595,7 +603,12 @@ mod tests {
         let mut by_file: BTreeMap<String, usize> = BTreeMap::new();
         for g in gaps {
             *by_kind.entry(g.kind.as_str().to_string()).or_default() += 1;
-            *by_stmt.entry(format!("{}{}", g.stmt, if g.in_arg { " (arg)" } else { "" }))
+            *by_stmt
+                .entry(format!(
+                    "{}{}",
+                    g.stmt,
+                    if g.in_arg { " (arg)" } else { "" }
+                ))
                 .or_default() += 1;
             *by_file.entry(g.file.clone()).or_default() += 1;
         }
@@ -625,7 +638,11 @@ mod tests {
         lines.push(format!("| word tokens | {total_words} |"));
         lines.push(format!(
             "| **uncovered word tokens** | **{uncovered} ({:.2}%)** |",
-            if total_words == 0 { 0.0 } else { uncovered as f64 * 100.0 / total_words as f64 }
+            if total_words == 0 {
+                0.0
+            } else {
+                uncovered as f64 * 100.0 / total_words as f64
+            }
         ));
         lines.push(String::new());
 
@@ -662,7 +679,9 @@ mod tests {
         let rank = |g: &Gap| {
             by_stmt
                 .iter()
-                .position(|(k, _)| *k == format!("{}{}", g.stmt, if g.in_arg { " (arg)" } else { "" }))
+                .position(|(k, _)| {
+                    *k == format!("{}{}", g.stmt, if g.in_arg { " (arg)" } else { "" })
+                })
                 .unwrap_or(usize::MAX)
         };
         let mut examples: Vec<&Gap> = gaps.iter().collect();
@@ -678,7 +697,12 @@ mod tests {
             let where_ = if g.in_arg { "arg" } else { "body" };
             lines.push(format!(
                 "{}:{}  [{:?} @ {}:{}]  {:?}",
-                g.file, g.line, g.kind.as_str(), g.stmt, where_, g.text
+                g.file,
+                g.line,
+                g.kind.as_str(),
+                g.stmt,
+                where_,
+                g.text
             ));
         }
         lines.push("```".into());
@@ -783,11 +807,7 @@ mod tests {
     }
 
     /// Texts of the decoded tokens of one class.
-    fn class_texts(
-        rope: &Rope,
-        abs: &[(u32, u32, u32, u32)],
-        class: Class,
-    ) -> Vec<String> {
+    fn class_texts(rope: &Rope, abs: &[(u32, u32, u32, u32)], class: Class) -> Vec<String> {
         abs.iter()
             .filter(|(_, _, _, t)| *t == class as u32)
             .map(|&(l, c, n, _)| seg_text(rope, l, c, n))
@@ -834,13 +854,19 @@ mod tests {
         // deviate verbs & the deviation keyword (deviations.yang).
         let (rope, abs) = fixture_semantic("deviations.yang");
         let kws = class_texts(&rope, &abs, Class::Keyword);
-        assert!(kws.iter().any(|s| s == "deviation"), "deviation keyword: {kws:?}");
+        assert!(
+            kws.iter().any(|s| s == "deviation"),
+            "deviation keyword: {kws:?}"
+        );
         assert!(
             kws.iter().filter(|s| *s == "deviate").count() >= 4,
             "'deviate' keywords missing: {kws:?}"
         );
         for verb in ["add", "replace", "delete", "not-supported"] {
-            assert!(kws.iter().any(|s| s == verb), "deviate verb {verb:?}: {kws:?}");
+            assert!(
+                kws.iter().any(|s| s == verb),
+                "deviate verb {verb:?}: {kws:?}"
+            );
         }
 
         // Quoted augment target is a string; node names & statement keywords
@@ -848,11 +874,22 @@ mod tests {
         let (rope, abs) = fixture_semantic("refs.yang");
         let strings = class_texts(&rope, &abs, Class::String);
         assert!(
-            strings.iter().any(|s| s.contains("r:top") && s.starts_with('"')),
+            strings
+                .iter()
+                .any(|s| s.contains("r:top") && s.starts_with('"')),
             "quoted augment target not a string token: {strings:?}"
         );
         let vars = class_texts(&rope, &abs, Class::Variable);
-        for name in ["top", "item", "name", "kind", "serial", "flag-on", "via-quoted", "extra"] {
+        for name in [
+            "top",
+            "item",
+            "name",
+            "kind",
+            "serial",
+            "flag-on",
+            "via-quoted",
+            "extra",
+        ] {
             assert!(
                 vars.iter().any(|s| s == name),
                 "data node {name:?} not variable-colored: {vars:?}"
@@ -867,8 +904,16 @@ mod tests {
         let (rope, abs) = fixture_semantic("keywords.yang");
         let kws = class_texts(&rope, &abs, Class::Keyword);
         for w in [
-            "container", "list", "leaf", "type", "key", "ordered-by", "user", "status",
-            "deprecated", "current",
+            "container",
+            "list",
+            "leaf",
+            "type",
+            "key",
+            "ordered-by",
+            "user",
+            "status",
+            "deprecated",
+            "current",
         ] {
             assert!(
                 kws.iter().any(|s| s == w),
@@ -878,7 +923,10 @@ mod tests {
         // ...and its quoted `range`/`length` args are colored as strings whole.
         let strings = class_texts(&rope, &abs, Class::String);
         assert_eq!(
-            strings.iter().filter(|s| s.as_str() == "\"1..max\"").count(),
+            strings
+                .iter()
+                .filter(|s| s.as_str() == "\"1..max\"")
+                .count(),
             2,
             "range/length quoted args not colored whole: {strings:?}"
         );
@@ -887,7 +935,12 @@ mod tests {
         // `range "-16..-1"` (mirrors bbf-...-body-mounted.yang).
         let (rope, abs) = fixture_semantic("numbers.yang");
         let strings = class_texts(&rope, &abs, Class::String);
-        for r in ["\"-16..-1\"", "\"-48..-14\"", "\"-3..6\"", "\"-63.5..-0.5\""] {
+        for r in [
+            "\"-16..-1\"",
+            "\"-48..-14\"",
+            "\"-3..6\"",
+            "\"-63.5..-0.5\"",
+        ] {
             assert!(
                 strings.iter().any(|s| s == r),
                 "range {r:?} not a whole string token: {strings:?}"
@@ -1007,7 +1060,8 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(&bp).expect("baseline.json"))
                 .expect("parse baseline.json");
         assert_eq!(
-            expected, actual,
+            expected,
+            actual,
             "highlight coverage drifted vs {}\n\
              accept intentionally changed numbers with:\n    cargo test -- --ignored bless_highlight_baseline",
             bp.display()
@@ -1052,13 +1106,20 @@ mod tests {
             .map(|&(l, c, n, _)| seg_text(&rope, l, c, n))
             .collect();
         let joined: String = string_txt.iter().flat_map(|s| s.chars()).collect();
-        assert!(joined.contains("first line") && joined.contains("second line") && joined.contains("third line"));
+        assert!(
+            joined.contains("first line")
+                && joined.contains("second line")
+                && joined.contains("third line")
+        );
         // ...and the 2-line block comment yields two comment tokens.
         let comment_lines: u32 = abs
             .iter()
             .filter(|(_, _, _, t)| *t == Class::Comment as u32)
             .count() as u32;
-        assert_eq!(comment_lines, 2, "block comment should be split into one token per line");
+        assert_eq!(
+            comment_lines, 2,
+            "block comment should be split into one token per line"
+        );
     }
 
     #[test]
@@ -1073,7 +1134,9 @@ mod tests {
             .map(|&(l, c, n, _)| seg_text(&rope, l, c, n))
             .collect();
         assert!(
-            texts.iter().any(|s| s.contains("if:interfaces/if:interface")),
+            texts
+                .iter()
+                .any(|s| s.contains("if:interfaces/if:interface")),
             "augment path argument not highlighted: {texts:?}"
         );
         assert!(
@@ -1095,12 +1158,18 @@ mod tests {
             .filter(|(_, _, _, t)| *t == Class::Keyword as u32)
             .map(|&(l, c, n, _)| seg_text(&rope, l, c, n))
             .collect();
-        assert!(kws.iter().any(|s| s == "deviation"), "deviation keyword missing: {kws:?}");
+        assert!(
+            kws.iter().any(|s| s == "deviation"),
+            "deviation keyword missing: {kws:?}"
+        );
         assert!(
             kws.iter().filter(|s| *s == "deviate").count() >= 2,
             "leading 'deviate' keywords missing: {kws:?}"
         );
-        assert!(kws.iter().any(|s| s == "add"), "'deviate add' verb missing: {kws:?}");
+        assert!(
+            kws.iter().any(|s| s == "add"),
+            "'deviate add' verb missing: {kws:?}"
+        );
         assert!(
             kws.iter().any(|s| s == "not-supported"),
             "'deviate not-supported' verb missing: {kws:?}"

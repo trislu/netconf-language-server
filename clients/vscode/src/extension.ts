@@ -2,8 +2,12 @@
 //
 // Activates the netconf-language-server language client for `yang` documents.
 
-import { ExtensionContext, Uri, window, workspace } from "vscode";
-import { Executable, LanguageClient } from "vscode-languageclient/node";
+import { commands, ExtensionContext, Uri, window, workspace } from "vscode";
+import {
+    Executable,
+    ExecuteCommandRequest,
+    LanguageClient,
+} from "vscode-languageclient/node";
 
 const extension_id = "netconf";
 const language_id = "yang";
@@ -69,7 +73,15 @@ export async function activate(context: ExtensionContext) {
         { run: server_exec, debug: server_exec },
         {
             documentSelector: [
+                // YANG modules (authoring) …
                 { language: language_id, pattern: `${root_dir.fsPath}/**/*.yang`, scheme: "file" },
+                // … and candidate NETCONF instance documents. The server
+                // content-sniffs these against the compiled YANG library and
+                // stays dormant for files that are not NETCONF (M0, D19). The
+                // built-in XML/JSON extensions keep providing tokens/folding/
+                // formatting because the server declines those for xml/json.
+                { language: "xml", pattern: `${root_dir.fsPath}/**/*.xml`, scheme: "file" },
+                { language: "json", pattern: `${root_dir.fsPath}/**/*.json`, scheme: "file" },
             ],
             diagnosticCollectionName: extension_id,
             outputChannel: output_channel,
@@ -91,6 +103,42 @@ export async function activate(context: ExtensionContext) {
     log("starting language client...");
     await client.start();
     log("language client started.");
+
+    // NETCONF skeleton insert commands (M2): forward the active editor + caret
+    // to the server's `netconf/insertTemplate` command, which applies the
+    // template via a workspace edit.
+    const template_commands: Array<[string, string]> = [
+        ["netconf.insertGetConfigRpc", "get-config"],
+        ["netconf.insertEditConfigRpc", "edit-config"],
+        ["netconf.insertHello", "hello"],
+        ["netconf.insertConfigPayload", "config"],
+    ];
+    for (const [command, kind] of template_commands) {
+        context.subscriptions.push(
+            commands.registerCommand(command, async () => {
+                const editor = window.activeTextEditor;
+                if (!editor) {
+                    return;
+                }
+                const sel = editor.selection.active;
+                try {
+                    await client.sendRequest(ExecuteCommandRequest.type, {
+                        command: "netconf/insertTemplate",
+                        arguments: [
+                            {
+                                uri: editor.document.uri.toString(),
+                                kind,
+                                position: { line: sel.line, character: sel.character },
+                            },
+                        ],
+                    });
+                } catch (err) {
+                    log(`template insert failed: ${err}`);
+                }
+            }),
+        );
+    }
+    log("template commands registered.");
 }
 
 export function deactivate() {

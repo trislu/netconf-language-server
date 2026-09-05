@@ -31,6 +31,24 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "commands": [
+      {
+        "command": "netconf.insertGetConfigRpc",
+        "title": "NETCONF: Insert get-config RPC"
+      },
+      {
+        "command": "netconf.insertEditConfigRpc",
+        "title": "NETCONF: Insert edit-config RPC"
+      },
+      {
+        "command": "netconf.insertHello",
+        "title": "NETCONF: Insert hello"
+      },
+      {
+        "command": "netconf.insertConfigPayload",
+        "title": "NETCONF: Insert config payload"
+      }
+    ],
     "languages": [
       {
         "id": "yang",

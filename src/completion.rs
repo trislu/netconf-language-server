@@ -8,9 +8,16 @@ use yrepo::{Library, Statement, StatementKind, TypeCandidateKind};
 
 pub(crate) fn capability() -> CompletionOptions {
     CompletionOptions {
-        // `:` already leads to an implicit edit as the user types a prefix;
-        // trigger on it to refresh prefix-qualified candidates.
-        trigger_characters: Some(vec![":".to_owned()]),
+        // `:` refreshes prefix-qualified YANG candidates as they are typed; `<`
+        // starts an XML instance start tag (M2); `{`/`,` open a fresh member
+        // slot in a JSON (RFC 7951) object (M4). Empty results are harmless
+        // for the other languages.
+        trigger_characters: Some(vec![
+            ":".to_owned(),
+            "<".to_owned(),
+            "{".to_owned(),
+            ",".to_owned(),
+        ]),
         ..Default::default()
     }
 }

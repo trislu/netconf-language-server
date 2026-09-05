@@ -1,21 +1,26 @@
 # netconf-language-server
 
 A [language server](https://microsoft.github.io/language-server-protocol/) for
-authoring **NETCONF / YANG** modules (`*.yang`), implemented in Rust, with a
-VS Code extension.
+authoring **NETCONF / YANG** — YANG modules (`*.yang`) and NETCONF **instance
+documents** (XML envelopes/payloads and RFC 7951 JSON) — implemented in Rust,
+with a VS Code extension.
 
 ## Repository layout
 
 - [`src/`](src) — the language server binary (`netconf-language-server`).
   Semantic engine: [`yrepo`](https://github.com/trislu/yrepo) (YANG
-  parse/resolve/query). Grammar: `tree-sitter-yang`.
-- [`clients/vscode`](clients/vscode) — VS Code extension (language id `yang`,
-  settings section `netconf`).
-- [`examples/`](examples) — sample YANG modules for manual testing.
-- [`docs/architecture.md`](docs/architecture.md) — the design document
-  (decisions D1–D17).
+  parse/resolve/query + leaf value typing). Grammars: `tree-sitter-yang` (via
+  `yrepo`), plus `tree-sitter-xml` / `tree-sitter-json` for instance docs.
+- [`clients/vscode`](clients/vscode) — VS Code extension (language ids `yang`,
+  `xml`, `json`; settings section `netconf`).
+- [`examples/`](examples) — sample YANG modules plus XML/JSON instance documents
+  for manual testing.
+- [`docs/architecture.md`](docs/architecture.md) — the design document and
+  decision record (D1–D31, incl. the instance-document milestones M0–M5).
 
 ## LSP features
+
+### YANG authoring
 
 | Feature | Status |
 | --- | --- |
@@ -27,11 +32,27 @@ VS Code extension.
 | Hover (type chains / identity ancestry / prefix bindings) | ✅ |
 | Completion (`type` / identity `base`) | ✅ |
 
+### Instance documents (XML / RFC 7951 JSON)
+
+Instance `.xml`/`.json` files are content-sniffed against the compiled modules:
+NETCONF/`netconf` docs get the features below; anything unmatched stays dormant.
+
+| Feature | Status |
+| --- | --- |
+| Intent classification (envelope / config payload / data tree vs dormant) | ✅ (M0) |
+| XML read: goto / hover / diagnostics (unknown node, wrong namespace) | ✅ (M1) |
+| JSON read: goto / hover / diagnostics (unknown member, wrong module) | ✅ (M3) |
+| Diagnostics depth: missing mandatory/key, empty `choice` (XML + JSON) | ✅ (M4) |
+| XML write: NETCONF templates (`hello`, `get-config`, `edit-config`, `config`) | ✅ (M2) |
+| Completion: XML elements (keys/xmlns) & JSON members (RFC 7951 qualifiers) | ✅ (M2/M4) |
+| Leaf *value* validation (scalar-only; `union` silent) + typed defaults | ✅ (M5) |
+
 ## Building
 
 ```bash
 cargo build          # server -> target/debug/netconf-language-server
 cargo clippy         # lint
+cargo test           # unit + corpus suites
 ```
 
 VS Code client:

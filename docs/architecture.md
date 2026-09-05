@@ -3,12 +3,17 @@
 > As-built architecture & decision record for the **implemented** server (v0.1.0).
 > The LSP features in §7–§8 are all shipped — fold, format, highlight, pull
 > diagnostics, goto, hover, completion — and covered by unit + corpus tests
-> (§11). Status markers: **[DONE]** = settled & implemented, **[ASSUME]** = working
-> assumption to confirm.
+> (§11). Instance-document features (M0–M5: XML/JSON read+write, diagnostics
+> depth, leaf value validation) are also shipped (see §12; decisions D18+ in
+> §13). Status markers: **[DONE]** = settled &
+> implemented, **[ASSUME]** = working assumption to confirm.
 
 ## 0. Scope
 
-A Rust language server for authoring **NETCONF/YANG** (`*.yang`) plus a **VS Code** extension.
+A Rust language server for authoring **NETCONF/YANG** modules (`*.yang`) **and
+NETCONF instance documents** — XML message envelopes/payloads and RFC 7951 JSON
+— plus a **VS Code** extension. The YANG-only v0.1.0 behaviors are unchanged;
+instance features were shipped as milestones M0–M5 (see §12 and D18+ in §13).
 
 - Reference implementation skeleton & Design lessons: **`gemcap-language-server`** (MIT — mirror freely).
 - Semantic engine: **`yrepo`** (MIT crate, `0.1` on crates.io). Grammar: `tree-sitter-yang` (transitively pulled in by `yrepo`).
@@ -101,7 +106,8 @@ flowchart LR
 ```text
 netconf-language-server/
 ├── Cargo.toml              # tower-lsp-server 0.23, moka 0.12 (future), ropey 1.6,
-│                           #   tokio, serde/serde_json, strum, yrepo = "0.1"
+│                           #   tokio, serde/serde_json, strum, regex,
+│                           #   tree-sitter 0.26 + xml/json, yrepo (path dep)
 ├── docs/architecture.md
 ├── src/
 │   ├── main.rs             # transport boilerplate; deny print!; module decls
@@ -111,19 +117,30 @@ netconf-language-server/
 │   ├── config.rs           # Config (§9): netconf.indentSize
 │   ├── convert.rs          # Rope byte offset <-> LSP line/UTF-16 conversion (byte/pos math)
 │   ├── document.rs         # per-open-doc model: rope + version
-│   ├── workspace.rs        # *.yang discovery + file-URI <-> path helpers
-│   ├── semantic_token.rs   # highlight (two passes + delta encode + corpus tests)
-│   ├── fold.rs             # statement-level folding
-│   ├── format.rs           # full-doc formatter (regenerate + splice comments, parse guards)
-│   ├── goto.rs             # definition -> LocationLink (+ unit tests)
-│   ├── hover.rs            # hover markdown (+ unit tests)
-│   ├── completion.rs       # type / identity base completion (D16)
-│   ├── diagnostic.rs       # pull diagnostics + LS-side conflict-prefix check (D17)
+│   ├── workspace.rs        # *.yang discovery, DocLang routing (Yang/Xml/Json/Other) + uri<->path
+│   ├── semantic_token.rs   # highlight (two passes + delta encode + corpus tests)  [YANG-only]
+│   ├── fold.rs             # statement-level folding                              [YANG-only]
+│   ├── format.rs           # full-doc formatter (regenerate + splice comments)    [YANG-only]
+│   ├── goto.rs             # YANG definition -> LocationLink (+ unit tests)
+│   ├── hover.rs            # YANG hover markdown (+ unit tests)
+│   ├── completion.rs       # YANG type / identity base completion (D16)
+│   ├── diagnostic.rs       # YANG pull diagnostics + LS-side conflict-prefix (D17)
+│   ├── schema_idx.rs       # compiled-module summaries (instance-doc sniffing) (M0)
+│   ├── inst.rs             # instance intent classification (NETCONF vs dormant) (M0)
+│   ├── xml.rs              # XML instance tree parse + leaf text (M0/M1)
+│   ├── inst_map.rs         # XML element -> schema resolver + diags (+depth, M4)
+│   ├── json.rs             # RFC 7951 JSON instance parse (M0/M3)
+│   ├── jmap.rs             # JSON member -> schema resolver + diags (+depth, M4)
+│   ├── depth.rs            # shared mandatory/key/choice analysis (M4)
+│   ├── xcomp.rs            # XML element completion (M2)
+│   ├── template.rs         # NETCONF envelope skeleton templates + insert command (M2)
+│   ├── jcomp.rs            # JSON RFC 7951 member completion (M4)
+│   ├── valcheck.rs         # leaf value validation (scalar-only) + value defaults (M5)
 │   └── bin/
 │       ├── inspect.rs      # dev tool: yrepo diagnostic summary over a *.yang tree
 │       └── probe.rs        # dev tool: per-file diagnostic probe with source context
-├── clients/vscode/         # VS Code extension (mirror gemcap)
-├── examples/               # *.yang for manual testing
+├── clients/vscode/         # VS Code extension (mirror gemcap; yang+xml+json selectors, template commands)
+├── examples/               # *.yang + XML/JSON instance docs for manual testing
 └── testdata/highlight/     # vendored YANG corpus + baseline.json (highlight regression guard)
 ```
 
@@ -131,6 +148,8 @@ Notes:
 
 - No `text.rs`: byte↔line/UTF-16 math lives in `convert.rs` over each doc's `Rope`.
 - No `action.rs`: quick-fixes are deferred (D9), so there is no `textDocument/codeAction`.
+- Instance docs (XML/JSON) live in the doc cache only — they are **never** fed to
+  `yrepo`; semantics route on `workspace::DocLang` (M0, D18–D25).
 
 ---
 
@@ -608,7 +627,7 @@ vscode-languageclient 10 handles it; no manual `publishDiagnostics`.
 
 - **Positions**: `convert.rs` — `yrepo` byte ranges ↔ `lsp::Range` (UTF-16) via per-doc `Rope` (`byte_to_position`/`range_to_lsp`/`position_to_byte`/`utf16_len`). Careful: `row`/`col` in `token_at`/`statement_at` count Unicode scalars, not UTF-16; do not feed UTF-16 cols straight in. Multi-byte cursor positions clamp to the character start.
 - **`#[non_exhaustive]`** on `StatementKind`, `DiagnosticCode` → wildcard arms (`K::Unknown(_)` / `_`) in goto/hover/highlight/diagnostic.
-- **Non-goals v1**: `.yin`, network/`yangcatalog` fetch, leafref/`instance-identifier` XPath resolution, typedef *restriction-subset* semantics (RFC 7950 §9) beyond existence checks, full deviation add/delete/replace semantics, incremental repo compile, multi-workspace-folder, Zed client. *(Type-chain & identity-derivation existence resolution now come from `yrepo`.)*
+- **Non-goals v1**: `.yin`, network/`yangcatalog` fetch, *leafref / `instance-identifier` XPath resolution* (and leafref value *chasing*, D31 — scalar leaf *value* checks are in, M5), full deviation add/delete/replace semantics, incremental repo compile, multi-workspace-folder, Zed client. *(Type-chain & identity-derivation existence resolution and the leaf restriction facets now come from `yrepo`; `union` values are deliberately not checked, D31.)*
 - **Logging** discipline as gemcap (window/logMessage only via `client.rs`; `#![deny(clippy::print_stdout)]`/`print_stderr`). Errors surfaced as LSP errors, never panics on user content.
 - **Tests**: unit tests in `goto.rs`/`hover.rs` over a scripted `yrepo` repository, plus the `semantic_token.rs` suite — delta-decode helpers, multi-line token splitting, per-shape assertions (`highlight_known_shapes_are_covered`) and a **coverage regression guard** over the vendored `testdata/highlight` corpus (`highlight_coverage_matches_baseline` vs `baseline.json`: 7 files, 275 word tokens, 0 uncovered; re-bless with the ignored `bless_highlight_baseline`). Dev-only binaries `src/bin/inspect.rs`/`probe.rs` inspect `yrepo` diagnostics over a tree / single file. A full stdio JSON-RPC integration harness is still future work.
 
@@ -632,10 +651,26 @@ own module behind a `capability()` + `handle(…)` shape and is dispatched from
 | 8 | Completion | `completion.rs` | `type` / identity `base` args |
 | 9 | VS Code client & tooling | `clients/vscode`, `.vscode/*`, `src/bin/*` | F5 extension debugging; `inspect`/`probe` dev bins |
 
+### Instance documents (M0–M5)
+
+A second feature family, routed by `workspace::DocLang`; the YANG path above is
+untouched (D24/D25).
+
+| Ms | Feature | Where |
+| --- | --- | --- |
+| M0 | routing + intent classification (recognized vs dormant) | `workspace.rs` (`DocLang`), `inst.rs`, `xml.rs`/`json.rs` roots, `schema_idx.rs` |
+| M1 | XML **read**: goto / hover / diagnostics on elements | `xml.rs`, `inst_map.rs` |
+| M2 | XML **write**: NETCONF templates + element completion | `template.rs`, `xcomp.rs` + `workspace/executeCommand` |
+| M3 | JSON **read** (RFC 7951): goto / hover / diagnostics on members | `json.rs`, `jmap.rs` |
+| M4 | JSON completion + diagnostics depth (mandatory/key/choice) | `jcomp.rs`, `depth.rs` (XML + JSON) |
+| M5 | leaf **value** validation (scalar-only, `union` silent) + typed defaults | `valcheck.rs` + yrepo value typing |
+
 Deferred (not shipped in v1): quick-fixes/`codeAction` (D9),
 `didChangeWatchedFiles` re-scan on external file changes, range formatting,
 incremental repo compile, out-of-workspace include dirs, multi-workspace-folder.
-See `TODO.md` for deferred navigation/highlight ideas.
+From the instance work: leafref value *chasing* and fully-semantic
+`instance-identifier` (D31), envelope goto modeling (D28 mechanism). See
+`TODO.md` for deferred navigation/highlight ideas.
 
 ---
 
@@ -663,6 +698,24 @@ server. Status markers match the sections above.
 | D15 | Intra-arg literal spans (highlight) | (a) local scanner / (b) `tokens()` | ✅ **DONE** (b) — `tokens()` |
 | D16 | Completion for `type`/`base` args | add to scope vs later | ✅ **done** — §8.7 |
 | D17 | LS-side diags | conflict-prefix only (import-cycle now in yrepo; dup-sibling dropped D8) | ✅ **done** — `conflict_prefix` (`diagnostic.rs`) |
+| D18 | JSON scope (M3/M4) | RFC 7951 instance/config docs; RESTCONF HTTP out of scope | ✅ **LOCKED** — shipped M3/M4 |
+| D19 | File recognition | content-sniffing vs compiled library; no in-file markers | ✅ **LOCKED** (M0) |
+| D20 | Format order | XML end-to-end first, then JSON | ✅ **LOCKED** (M1–M3) |
+| D21 | NETCONF envelope schema | hard-coded in server | ✅ **LOCKED** — Rust consts (`template.rs`; ops in `xcomp`) |
+| D22 | Instance parsing | `tree-sitter-xml` + `tree-sitter-json` | ✅ **LOCKED** (M0) |
+| D23 | Workspace model | single folder; unmatched docs dormant | ✅ **LOCKED** |
+| D24 | Server modules | `inst`/`xml`/`json`/`schema_idx`/`inst_map`/`jmap`/`xcomp`/`jcomp`/`template`/`depth`/`valcheck` (see §3) | ✅ **LOCKED** — all shipped M0–M5 |
+| D25 | Capability scoping | tokens/fold/format stay YANG-only; others per-doc `null` | ✅ **LOCKED** |
+| D26 | Dormant behavior | silent vs info diagnostic | **[OPEN]** — currently silent |
+| D27 | Diag depth + leaf type-check | depth shipped M4 (mandatory/key/choice, XML+JSON); leaf *value* scope → D31 (M5) | ✅ **M4/M5** |
+| D28 | Envelope representation | embedded YANG module vs Rust table | **[OPEN]** — Rust const table in use today |
+| D29 | Where the data↔schema flattening lives | new `yrepo` APIs (`data_children`/`data_child`/`rpc_input`/`rpc_output`/`modules_by_namespace`); no LS-side schema-walk duplication | ✅ **LOCKED (a)** — yrepo (detail: §14) |
+| D30 | Identifier spaces | XML keys on **namespace URI**, JSON on **module name** (RFC 7951 §4), schema-nodeids on scoped prefix; per-node **instance-namespace owner** (`SchemaNode::instance_module`) ≠ `origin_module` for grouping-born nodes | ✅ **LOCKED (a)** — yrepo (§14) |
+| D31 | Leaf *value* checking scope | scalar-reducible only (typedef chain → builtin): `length`/`pattern`, `range`, `enumeration`/`bits`; semantic `identityref`; **`union` fully silent** (RFC 7950 §9.12) | ✅ **LOCKED (M5)** — leafref chase deferred |
+
+**D18–D31** are the instance-document decisions (milestones M0–M5, §12) and
+reflect the shipped state; the `yrepo` additions backing D29–D31 are summarized
+in §14 and documented in `yrepo`'s own docs.
 
 Q&A (answered inline):
 
@@ -673,3 +726,38 @@ Q&A (answered inline):
 - **Q14** — formatter strategy pros/cons: §8.2 (Format).
 
 - **Q15** — what `tokens()` means (now implemented): §5.3 (D15).
+
+---
+
+## 14. D29–D31 backing — `yrepo` additions (instance data + value typing)
+
+The LS decisions D29–D31 are implemented as read-only queries in `yrepo`
+(tracked there as its own D18/D19), so instance mapping needs no LS-side
+schema-walk duplication. The `yrepo` surface the instance code consumes:
+
+- `NodeKind::is_data()` / `is_wrapper()` — data kinds vs the schema-only
+  wrappers (`choice`/`case`/`input`/`output`) that never appear in an instance
+  document.
+- `SchemaNode::instance_module()` — the module whose **namespace** owns the
+  node in instance data; equals `origin_module` except for nodes instantiated
+  from a grouping via `uses` (RFC 7950 §7.13). `origin_module` stays the
+  definition module for goto. `SchemaNode::type_facets()` — facets written on
+  the node's own `type` statement.
+- `ModuleRecord::data_children(id)` / `data_child(id, name)` — instance-visible
+  children through `choice`/`case` wrappers (data path ≠ schema path);
+  `rpc_input(id)` / `rpc_output(id)` are always present.
+- `Library::modules_by_namespace(ns)` — XML element-ns → module(s);
+  `Library::schema_nodeid(module, id)` — canonical wrapper-inclusive absolute
+  nodeid, each segment prefixed by its instance module (D30).
+- Leaf **value typing** (D31): the compiler captures a `type` statement's
+  facets (`TypeFacets`) on the leaf **and** each typedef; `Library::value_type`
+  reduces a leaf/leaf-list type through the typedef chain to a scalar
+  `ValueType` (string `length`/`pattern`, integer widths + `range`, `decimal64`,
+  `enumeration`/`bits` members, `leafref` `path`, `identityref` `base`) or a
+  coarse kind (`Leafref`/`Identityref`/`InstanceIdentifier`/`Union`/`Unknown`).
+  `union` is deliberately **not** checked (RFC 7950 §9.12);
+  `Library::check_identityref` gives semantic `identityref` membership
+  (`IdentityStatus`).
+
+Each is covered by `yrepo` tests; the same material is documented in `yrepo`'s
+own README/architecture (its decisions D18/D19).

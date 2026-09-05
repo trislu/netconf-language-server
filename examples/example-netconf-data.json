@@ -1,0 +1,27 @@
+{
+  "example-ietf-interfaces:interfaces": {
+    "interface": [
+      {
+        "name": "eth0",
+        "enabled": true,
+        "example-demo:admin-down": false
+      },
+      {
+        "name": "eth1",
+        "enabled": "zsadf",
+        "example-demo:admin-down": true
+      }
+    ]
+  },
+  "example-demo:system": {
+    "hostname": "switch1",
+    "ip": "10.0.0.1",
+    "port": true,
+    "user": [
+      {
+        "name": "admin",
+        "speed": 9999999
+      }
+    ]
+  }
+}

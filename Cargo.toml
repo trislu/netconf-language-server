@@ -2,7 +2,7 @@
 name = "netconf-language-server"
 version = "0.1.0"
 edition = "2024"
-description = "A language server implemented in rust for writing NETCONF/YANG"
+description = "A language server implemented in rust for reading & writing NETCONF/YANG text"
 authors = ["Lu Kai <mailto:lukai@mail.ustc.edu.cn>"]
 license = "MIT"
 readme = "README.md"
@@ -13,6 +13,7 @@ categories = ["development-tools"]
 [dependencies]
 
 moka = { version = "0.12", features = ["future"] }
+regex = "1"
 ropey = "1.6"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -21,4 +22,8 @@ toml = "0.9"
 tokio = { version = "1.37", features = ["full"] }
 tower-lsp-server = "0.23"
 
-yrepo = "0.1"
+tree-sitter = "0.26"
+tree-sitter-xml = "0.7"
+tree-sitter-json = "0.24"
+
+yrepo = "0.2"

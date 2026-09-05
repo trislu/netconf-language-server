@@ -7,15 +7,26 @@ mod client;
 mod completion;
 mod config;
 mod convert;
+mod depth;
 mod diagnostic;
 mod document;
 mod fold;
 mod format;
 mod goto;
 mod hover;
+mod inst;
+mod inst_map;
+mod jcomp;
+mod jmap;
+mod json;
+mod schema_idx;
 mod semantic_token;
 mod server;
+mod template;
+mod valcheck;
 mod workspace;
+mod xcomp;
+mod xml;
 
 use tower_lsp_server::LspService;
 

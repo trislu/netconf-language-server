@@ -26,7 +26,9 @@ fn main() {
 
     let mut repo = yrepo::Repository::new();
     for f in &files {
-        let Ok(text) = std::fs::read_to_string(f) else { continue };
+        let Ok(text) = std::fs::read_to_string(f) else {
+            continue;
+        };
         repo.upsert(f.to_string_lossy().to_string(), text);
     }
     let out = repo.compile();
@@ -57,7 +59,11 @@ fn main() {
             full_doc += 1;
             let url = d.url.as_deref().unwrap_or("?");
             let text = std::fs::read_to_string(url).unwrap_or_default();
-            let frac = if text.is_empty() { 0.0 } else { (r.end - r.start) as f64 / text.len() as f64 };
+            let frac = if text.is_empty() {
+                0.0
+            } else {
+                (r.end - r.start) as f64 / text.len() as f64
+            };
             let ctx = text
                 .get(r.start.min(text.len())..(r.start + 120).min(text.len()))
                 .map(|s| s.replace('\n', "\\n"))

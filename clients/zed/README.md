@@ -72,6 +72,33 @@ leaf _value_ validation, and RFC 7951/XML completion.
 
 See the [detailed LSP features guide](../docs/features.md) in the repo.
 
+## Demo
+
+**Read** — diagnostics & hover over **YANG**, **XML (NETCONF)**, and **RFC 7951
+JSON**:
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/images/netconf-zed-yang-20260906.png" alt="YANG diagnostics & hover" width="720">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/images/netconf-zed-xml-20260906.png" alt="XML (NETCONF) diagnostics & hover" width="720">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/images/netconf-zed-json-20260906.png" alt="RFC 7951 JSON diagnostics & hover" width="720">
+</p>
+
+**Write** — completion on XML elements and JSON members:
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/images/netconf-zed-xcomp-20260906.png" alt="XML completion" width="720">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/images/netconf-zed-jcomp-20260906.png" alt="JSON completion" width="720">
+</p>
+
 ## References
 
 - [YANG](https://www.rfc-editor.org/info/rfc6020)

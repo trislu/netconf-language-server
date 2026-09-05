@@ -8,7 +8,7 @@
 A [language server](https://microsoft.github.io/language-server-protocol/) for
 authoring **NETCONF / YANG** — YANG modules (`*.yang`) and NETCONF **instance
 documents** (XML envelopes/payloads and RFC 7951 JSON) — implemented in Rust,
-with a VS Code extension.
+with [VS Code](clients/vscode) and [Zed](clients/zed) extensions.
 
 ## Repository layout
 
@@ -18,6 +18,8 @@ with a VS Code extension.
   `yrepo`), plus `tree-sitter-xml` / `tree-sitter-json` for instance docs.
 - [`clients/vscode`](clients/vscode) — VS Code extension (language ids `yang`,
   `xml`, `json`; settings section `netconf`).
+- [`clients/zed`](clients/zed) — Zed extension registering `netconf-language-server`
+  for YANG, XML, and JSON.
 - [`examples/`](examples) — sample YANG modules plus XML/JSON instance documents
   for manual testing.
 - [`docs/architecture.md`](docs/architecture.md) — the design document and
@@ -27,8 +29,8 @@ with a VS Code extension.
 
 ### Demo
 
-**Read — diagnostics & hover** over **YANG**, **XML (NETCONF)**, and **RFC 7951
-JSON**:
+**VS Code** — the [VS Code extension](clients/vscode). **Read** — diagnostics &
+hover — over **YANG**, **XML (NETCONF)**, and **RFC 7951 JSON**:
 
 <p align="center">
   <img src="clients/vscode/resources/images/netconf-vscode-yang-20260905.png" alt="YANG diagnostics & hover" width="720">
@@ -42,7 +44,7 @@ JSON**:
   <img src="clients/vscode/resources/images/netconf-vscode-json-20260905.png" alt="RFC 7951 JSON diagnostics & hover" width="720">
 </p>
 
-**Write — completion** on XML elements and JSON members:
+**Write** — completion on XML elements and JSON members:
 
 <p align="center">
   <img src="clients/vscode/resources/images/netconf-vscode-xcomp-20260905.png" alt="XML completion" width="720">
@@ -50,6 +52,29 @@ JSON**:
 
 <p align="center">
   <img src="clients/vscode/resources/images/netconf-vscode-jcomp-20260905.png" alt="JSON completion" width="720">
+</p>
+
+**Zed** — the [Zed extension](clients/zed). Same **read** (diagnostics & hover)
+and **write** (completion) features in the Zed editor:
+
+<p align="center">
+  <img src="assets/images/netconf-zed-yang-20260906.png" alt="YANG diagnostics & hover (Zed)" width="720">
+</p>
+
+<p align="center">
+  <img src="assets/images/netconf-zed-xml-20260906.png" alt="XML (NETCONF) diagnostics & hover (Zed)" width="720">
+</p>
+
+<p align="center">
+  <img src="assets/images/netconf-zed-json-20260906.png" alt="RFC 7951 JSON diagnostics & hover (Zed)" width="720">
+</p>
+
+<p align="center">
+  <img src="assets/images/netconf-zed-xcomp-20260906.png" alt="XML completion (Zed)" width="720">
+</p>
+
+<p align="center">
+  <img src="assets/images/netconf-zed-jcomp-20260906.png" alt="JSON completion (Zed)" width="720">
 </p>
 
 ### YANG authoring

@@ -12,6 +12,7 @@ categories = ["development-tools"]
 
 [dependencies]
 
+dunce = "1.0"
 moka = { version = "0.12", features = ["future"] }
 regex = "1"
 ropey = "1.6"

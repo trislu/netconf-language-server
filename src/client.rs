@@ -20,6 +20,16 @@ pub(crate) fn init(c: Client) {
 pub(crate) struct Window;
 
 #[macro_export]
+macro_rules! log {
+    ($msg:expr) => {
+        (
+            tower_lsp_server::ls_types::MessageType::LOG,
+            $msg.to_owned(),
+        )
+    };
+}
+
+#[macro_export]
 macro_rules! info {
     ($msg:expr) => {
         (

@@ -460,6 +460,9 @@ impl Server {
             let Some(url) = workspace::path_to_url(&path) else {
                 continue;
             };
+            // Canonical spelling so scan keys equal open-buffer keys even when
+            // the client URI and this walk disagree on encoding/case.
+            let url = workspace::canon_url(&url);
             // Skip files that have an open buffer (buffer text wins).
             if self.docs.contains_key(&url) {
                 continue;
@@ -596,7 +599,7 @@ impl LanguageServer for Server {
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
-        let uri = params.text_document.uri.to_string();
+        let uri = workspace::canon_url(&params.text_document.uri.to_string());
         let version = params.text_document.version;
         let text = params.text_document.text;
         Window::log(info!(format!("did_open: {uri}"))).await;
@@ -614,7 +617,7 @@ impl LanguageServer for Server {
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
-        let uri = params.text_document.uri.to_string();
+        let uri = workspace::canon_url(&params.text_document.uri.to_string());
         for change in &params.content_changes {
             if change.range.is_some() {
                 Window::log(warning!("unsupported incremental change")).await;
@@ -629,7 +632,7 @@ impl LanguageServer for Server {
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
-        let uri = params.text_document.uri.to_string();
+        let uri = workspace::canon_url(&params.text_document.uri.to_string());
         Window::log(info!(format!("did_close: {uri}"))).await;
         self.docs.remove(&uri).await;
         if workspace::is_yang(&uri) {
@@ -682,7 +685,7 @@ impl LanguageServer for Server {
         &self,
         params: SemanticTokensParams,
     ) -> jsonrpc::Result<Option<SemanticTokensResult>> {
-        let uri = params.text_document.uri.to_string();
+        let uri = workspace::canon_url(&params.text_document.uri.to_string());
         // Highlight stays YANG-only so built-in XML/JSON coloring is untouched.
         if !workspace::is_yang(&uri) {
             return Ok(None);
@@ -701,7 +704,7 @@ impl LanguageServer for Server {
         &self,
         params: FoldingRangeParams,
     ) -> jsonrpc::Result<Option<Vec<FoldingRange>>> {
-        let uri = params.text_document.uri.to_string();
+        let uri = workspace::canon_url(&params.text_document.uri.to_string());
         // Folding stays YANG-only (built-in XML/JSON providers handle the rest).
         if !workspace::is_yang(&uri) {
             return Ok(None);
@@ -718,7 +721,7 @@ impl LanguageServer for Server {
         &self,
         params: DocumentFormattingParams,
     ) -> jsonrpc::Result<Option<Vec<TextEdit>>> {
-        let uri = params.text_document.uri.to_string();
+        let uri = workspace::canon_url(&params.text_document.uri.to_string());
         // Formatting stays YANG-only (built-in XML/JSON providers handle the rest).
         if !workspace::is_yang(&uri) {
             return Ok(None);
@@ -767,11 +770,13 @@ impl LanguageServer for Server {
         &self,
         params: GotoDefinitionParams,
     ) -> jsonrpc::Result<Option<GotoDefinitionResponse>> {
-        let uri = params
-            .text_document_position_params
-            .text_document
-            .uri
-            .to_string();
+        let uri = workspace::canon_url(
+            &params
+                .text_document_position_params
+                .text_document
+                .uri
+                .to_string(),
+        );
         // Non-YANG docs: XML/JSON instance read features (M1/M3).
         if !workspace::is_yang(&uri) {
             let pos = params.text_document_position_params.position;
@@ -822,11 +827,13 @@ impl LanguageServer for Server {
     }
 
     async fn hover(&self, params: HoverParams) -> jsonrpc::Result<Option<Hover>> {
-        let uri = params
-            .text_document_position_params
-            .text_document
-            .uri
-            .to_string();
+        let uri = workspace::canon_url(
+            &params
+                .text_document_position_params
+                .text_document
+                .uri
+                .to_string(),
+        );
         // Non-YANG docs: XML/JSON instance read features (M1/M3).
         if !workspace::is_yang(&uri) {
             let pos = params.text_document_position_params.position;
@@ -867,7 +874,8 @@ impl LanguageServer for Server {
         &self,
         params: CompletionParams,
     ) -> jsonrpc::Result<Option<CompletionResponse>> {
-        let uri = params.text_document_position.text_document.uri.to_string();
+        let uri =
+            workspace::canon_url(&params.text_document_position.text_document.uri.to_string());
         if !workspace::is_yang(&uri) {
             // Instance writing: XML (M2) and JSON (M4) completion.
             let pos = params.text_document_position.position;
@@ -911,7 +919,7 @@ impl LanguageServer for Server {
         &self,
         params: DocumentDiagnosticParams,
     ) -> jsonrpc::Result<DocumentDiagnosticReportResult> {
-        let uri = params.text_document.uri.to_string();
+        let uri = workspace::canon_url(&params.text_document.uri.to_string());
         // XML/JSON instance docs pull `netconf` diagnostics (M1/M3); other
         // non-YANG docs stay dormant (empty).
         if !workspace::is_yang(&uri) {

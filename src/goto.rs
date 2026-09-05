@@ -10,7 +10,7 @@ use ropey::Rope;
 use tower_lsp_server::ls_types::{LocationLink, Uri};
 use yrepo::{Library, Statement, StatementKind};
 
-use crate::convert;
+use crate::{client::Window, convert, log};
 
 /// The RFC 7950 built-in type names (used to skip goto on `type` args).
 const BUILTIN_TYPES: &[&str] = &[
@@ -237,6 +237,7 @@ pub(crate) fn to_links(
         .iter()
         .filter_map(|t| {
             let target_rope = textmap.get(&t.url).unwrap_or(source_rope);
+            Window::log_sync(log!(format!("goto uri: {}", t.url)));
             let target_uri = t.url.parse::<Uri>().ok()?;
             Some(LocationLink {
                 target_uri,

@@ -71,3 +71,91 @@ pub(crate) fn url_to_path(url: &str) -> Option<PathBuf> {
     let uri = url.parse::<Uri>().ok()?;
     uri.to_file_path().map(|p| p.into_owned())
 }
+
+/// `std::fs::canonicalize` on Windows returns `\\?\`-prefixed verbatim
+/// paths that URI builders would turn into unusable URLs; `dunce`
+/// canonicalizes while stripping that prefix (cross-platform).
+///
+/// Canonical document key for a `file://` URI.
+///
+/// Client URIs (`textDocument/didOpen`, …) and the workspace scan may spell
+/// the same file differently (drive-letter case, `%3A`-style encoding, …).
+/// Since `yrepo` keys modules by the exact URL string, such spelling
+/// differences make one module enter the repository twice and compile to a
+/// spurious "duplicate module" diagnostic. Resolve the file path, canonicalize
+/// it, and rebuild the URI so every ingestion path uses one key. Non-file
+/// URIs (e.g. tests) pass through unchanged.
+pub(crate) fn canon_url(url: &str) -> String {
+    url_to_path(url)
+        .and_then(|path| {
+            let canon = dunce::canonicalize(&path).unwrap_or(path);
+            path_to_url(&canon)
+        })
+        .unwrap_or_else(|| url.to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{canon_url, path_to_url, url_to_path};
+    #[cfg(windows)]
+    use std::path::PathBuf;
+
+    // Windows paths are case-insensitive: a drive letter may be spelled
+    // `C:` by the client and `c:` by a URI rebuilt from a scan. That test
+    // only makes sense on Windows, so it stays gated here.
+    #[test]
+    #[cfg(windows)]
+    fn canon_url_normalizes_spelling_of_the_same_file() {
+        // Windows paths are case-insensitive, but the client URI and a
+        // URI rebuilt from a scan may differ in drive-letter case. Both
+        // spellings must canonicalize to one key so `yrepo` never sees
+        // one module twice.
+        let dir = std::env::temp_dir().join("netconf-ls-canon-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("spelling.yang");
+        std::fs::write(&file, "module spelling {}").unwrap();
+        let url = path_to_url(&file).expect("file url");
+
+        // Same path, drive letter lowercased (`c:\…` instead of `C:\…`).
+        let path = url_to_path(&url).expect("file path");
+        let path_text = path.to_string_lossy();
+        let colon = path_text.find(':').expect("windows drive colon");
+        let lower_path = PathBuf::from(format!(
+            "{}{}",
+            path_text[..colon].to_ascii_lowercase(),
+            &path_text[colon..]
+        ));
+        let lower_url = path_to_url(&lower_path).expect("lower url");
+
+        let key = canon_url(&url);
+        assert_eq!(key, canon_url(&lower_url));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn canon_keys_of_real_files_stay_path_convertible() {
+        // Zed converts every LocationLink target URI back to a path, so keys
+        // we emit must survive `Uri -> file path` (on Windows, canonicalize
+        // yields `\\?\` verbatim paths — hence `dunce` in `canon_url`).
+        for name in [
+            "examples/example-demo.yang",
+            "examples/example-ietf-interfaces.yang",
+            "examples/example-netconf-config.xml",
+            "examples/example-netconf-data.json",
+        ] {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(name);
+            let url = path_to_url(&path).expect("file url");
+            let key = canon_url(&url);
+            // The key must convert back to the *same* file — a URI that merely
+            // parses is not enough (e.g. `file://///%3F/…` from verbatim paths).
+            let back = url_to_path(&key).expect("key not path-convertible");
+            assert_eq!(
+                back.canonicalize().unwrap(),
+                path.canonicalize().unwrap(),
+                "key points elsewhere: {key}"
+            );
+            // Canonical keys must be idempotent, or scan/open still diverge.
+            assert_eq!(key, canon_url(&key));
+        }
+    }
+}

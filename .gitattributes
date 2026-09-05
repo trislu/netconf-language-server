@@ -1,0 +1,3 @@
+# Normalize all text files to LF in the repository. Each platform then checks
+# files out with its own default line endings (CRLF on Windows, LF elsewhere).
+* text=auto

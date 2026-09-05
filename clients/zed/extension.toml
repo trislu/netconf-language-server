@@ -1,0 +1,23 @@
+id = "Netconf"
+name = "NETCONF"
+version = "0.0.1"
+schema_version = 1
+authors = ["kai <lukai@mail.ustc.edu.cn>"]
+description = "NETCONF language support."
+repository = "https://github.com/trislu/netconf-language-server"
+
+[lib]
+kind = "Rust"
+version = "0.7.0"
+
+[grammars.yang]
+repository = "https://github.com/trislu/tree-sitter-yang"
+rev = "274cae2fbb6a798b887dfd3b9102ac7604ef7e43"
+
+# XML and JSON files are served by Zed's built-in JSON language and by the
+# "XML" extension from the marketplace; the language server simply attaches to
+# those languages by name, so no grammars are declared here for them.
+
+[language_servers.netconf-language-server]
+name = "NETCONF Language Server"
+languages = ["YANG", "XML", "JSON"]

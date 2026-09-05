@@ -1,0 +1,15 @@
+[package]
+name = "NETCONF"
+version = "0.0.1"
+edition = "2024"
+description = "NETCONF Language Server"
+authors = ["kai <lukai@mail.ustc.edu.cn>"]
+license = "MIT"
+repository = "https://github.com/trislu/netconf-language-server"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+zed_extension_api = "0.7.0"
+serde_json = "1.0"

@@ -220,6 +220,43 @@ pub(crate) fn resolve(
                 origin_range: arg.range.clone(),
             }
         }
+        // A `leafref` `path` (RFC 7950 §9.9) names the schema node the leaf
+        // references. Absolute paths (the common cross-module form) jump
+        // there; predicates (`[…]`) are stripped for the lookup. Relative
+        // paths need the owner leaf's own schema path and are deferred to the
+        // leafref-path engine (P1).
+        K::Path => {
+            let path = arg.path();
+            if !path.starts_with('/') {
+                return None;
+            }
+            let lookup = match path.find('[') {
+                Some(i) => &path[..i],
+                None => &path,
+            };
+            let node = lib.resolve_abs_schema_node_id(scope, lookup)?;
+            let loc = node.defining();
+            Target {
+                url: loc.url.to_string(),
+                target_range: loc.range.clone(),
+                origin_range: arg.range.clone(),
+            }
+        }
+        // A `deviation` target names a schema node just like an `augment`
+        // target does; jump there for writers editing deviations.
+        K::Deviation => {
+            let path = arg.path();
+            if !path.starts_with('/') {
+                return None;
+            }
+            let node = lib.resolve_abs_schema_node_id(scope, &path)?;
+            let loc = node.defining();
+            Target {
+                url: loc.url.to_string(),
+                target_range: loc.range.clone(),
+                origin_range: arg.range.clone(),
+            }
+        }
         // A non-navigable statement (or a `uses-augment` descendant path).
         _ => return None,
     };
@@ -335,5 +372,79 @@ mod tests {
             resolve(&rope, &root, "/fmod.yang", b, "fmod", &lib).expect("identity default goto");
         assert_eq!(t.len(), 1);
         assert_eq!(text_at(FEAT, t[0].target_range.clone()), "auto-id");
+    }
+
+    const LRF: &str = "module lrbase {\n  namespace \"urn:lb\";\n  prefix b;\n\
+      container top { list item { key name; leaf name { type string; }\n\
+      leaf port { type uint16; } } }\n\
+    }\n";
+    const LR: &str = "module lr {\n  namespace \"urn:lr\";\n  prefix l;\n\
+      import lrbase { prefix b; }\n\
+      leaf ref { type leafref { path \"/b:top/b:item/b:port\"; } }\n\
+      leaf refp { type leafref { path \"/b:top/b:item[b:name='x']/b:port\"; } }\n\
+    }\n";
+
+    #[test]
+    fn goto_leafref_path_and_deviation() {
+        let mut repo = Repository::new();
+        repo.upsert("/lrbase.yang", LRF.to_string());
+        repo.upsert("/lr.yang", LR.to_string());
+        let out = repo.compile();
+        let lib = out.library.expect("library");
+        let rope = Rope::from_str(LR);
+        let root = repo.statement("/lr.yang").expect("root").clone();
+
+        // leafref absolute path -> referenced leaf definition.
+        let b = LR.find("path \"/b:top/b:item/b:port\"").unwrap() + "path \"".len();
+        let t = resolve(&rope, &root, "/lr.yang", b, "lr", &lib).expect("leafref goto");
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].url, "/lrbase.yang");
+        let hit = text_at(LRF, t[0].target_range.clone());
+        assert!(
+            hit.contains("port"),
+            "target text {hit:?} should name the leaf"
+        );
+
+        // leafref path with a predicate: predicates are stripped for the jump.
+        let b = LR
+            .find("path \"/b:top/b:item[b:name='x']/b:port\"")
+            .unwrap()
+            + "path \"".len();
+        let t = resolve(&rope, &root, "/lr.yang", b, "lr", &lib).expect("leafref predicate goto");
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].url, "/lrbase.yang");
+        let hit = text_at(LRF, t[0].target_range.clone());
+        assert!(
+            hit.contains("port"),
+            "target text {hit:?} should name the leaf"
+        );
+    }
+
+    const DEV: &str = "module devbase {\n  namespace \"urn:db\";\n  prefix db;\n\
+      container c { leaf mtu { type uint32; } }\n\
+    }\n";
+    const DV: &str = "module dv {\n  namespace \"urn:dv\";\n  prefix dv;\n\
+      import devbase { prefix db; }\n\
+      deviation \"/db:c/db:mtu\" { deviate replace { type uint8; } }\n\
+    }\n";
+
+    #[test]
+    fn goto_deviation_target() {
+        let mut repo = Repository::new();
+        repo.upsert("/devbase.yang", DEV.to_string());
+        repo.upsert("/dv.yang", DV.to_string());
+        let out = repo.compile();
+        let lib = out.library.expect("library");
+        let rope = Rope::from_str(DV);
+        let root = repo.statement("/dv.yang").expect("root").clone();
+        let b = DV.find("deviation \"/db:c/db:mtu\"").unwrap() + "deviation \"".len();
+        let t = resolve(&rope, &root, "/dv.yang", b, "dv", &lib).expect("deviation goto");
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].url, "/devbase.yang");
+        let hit = text_at(DEV, t[0].target_range.clone());
+        assert!(
+            hit.contains("mtu"),
+            "target text {hit:?} should name the leaf"
+        );
     }
 }

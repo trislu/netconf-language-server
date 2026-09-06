@@ -145,8 +145,28 @@ fn path_completions(
     }
     // Drop any already-typed segment that is still incomplete.
     let segs: Vec<&str> = full_parent.split('/').filter(|s| !s.is_empty()).collect();
-    // First segment fixes the module and the prefix we reuse for labels.
-    let first = *segs.first()?;
+    if segs.is_empty() {
+        // Leading "/" with no module prefix yet: offer "pfx:" candidates for
+        // the module's own prefix and every import.
+        let mut prefixes: Vec<(String, String)> = Vec::new();
+        if let Some(own) = lib.module(scope)?.prefix() {
+            prefixes.push((own.to_string(), scope.to_string()));
+        }
+        prefixes.extend(lib.import_prefixes(scope));
+        let partial = partial.trim_start_matches(':');
+        let items: Vec<CompletionItem> = prefixes
+            .into_iter()
+            .filter(|(p, _)| p.starts_with(partial))
+            .map(|(p, m)| CompletionItem {
+                label: format!("{p}:"),
+                kind: Some(CompletionItemKind::MODULE),
+                detail: Some(format!("module {m}")),
+                ..Default::default()
+            })
+            .collect();
+        return Some(items);
+    }
+    let first = segs[0];
     let (pfx, _) = match first.split_once(':') {
         Some((p, l)) => (Some(p.to_string()), l.to_string()),
         None => (None, first.to_string()),
@@ -225,6 +245,11 @@ mod tests {
     use super::*;
     use yrepo::Repository;
 
+    const LR_BASE_MOCK: &str = "module lrbase {\n  namespace \"urn:lb\";\n  prefix b;\n\
+          container top { list item { key name; leaf name { type string; }\n\
+          leaf port { type uint16; } } }\n\
+        }\n";
+
     const BASE: &str = "module cbase {\n  namespace \"urn:cb\";\n  prefix cb;\n\
       grouping bg { leaf x { type string; } }\n\
     }\n";
@@ -280,5 +305,24 @@ mod tests {
         let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
         assert!(labels.contains(&"b:port"), "labels: {labels:?}");
         assert!(labels.contains(&"b:name"), "labels: {labels:?}");
+    }
+
+    #[test]
+    fn completion_suggests_module_prefixes_at_path_start() {
+        const LR2: &str = "module lr {\n  namespace \"urn:lr\";\n  prefix l;\n\
+          import lrbase { prefix b; }\n\
+          leaf ref { type leafref { path \"/b\" } }\n\
+        }\n";
+        let mut repo = Repository::new();
+        repo.upsert("/lrbase.yang", LR_BASE_MOCK.to_string());
+        repo.upsert("/lr.yang", LR2.to_string());
+        let out = repo.compile();
+        let lib = out.library.expect("lib");
+        let root = repo.statement("/lr.yang").expect("root");
+        let rope = Rope::from_str(LR2);
+        let byte = LR2.find("path \"/b\"").unwrap() + "path \"/".len() + 1;
+        let items = handle(root, &rope, byte, "lr", &lib, &fake_params()).expect("items");
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert!(labels.contains(&"b:"), "labels: {labels:?}");
     }
 }

@@ -7,18 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-06
+
 ### Added
 
 - **Zed extension** (`clients/zed`): the same `netconf-language-server` binary
   attached to Zed's YANG / XML / JSON languages for **read** (diagnostics &
   hover) and **write** (completion).
+- **Faster startup on large workspaces**: `yrepo` 0.3's `parallel` feature —
+  the one-time scan ingests on-disk `.yang` modules in a single
+  `upsert_many_files` batch and `compile` phases run across threads.
 
 ### Changed
 
-- Dependency: `yrepo` is now pulled from crates.io at `0.3` with the
-  `parallel` feature; the workspace scan feeds on-disk `.yang` modules to
-  `Repository::upsert_many_files` as one batch (yrepo reads + parses them in
-  parallel, one file in memory at a time).
+- `yrepo` is now pulled from crates.io at `0.3` with the `parallel` feature
+  (previously a local path dependency).
 
 ## [0.1.0] - 2026-09-05
 
@@ -56,5 +59,5 @@ VS Code extension.
 ### Notes
 
 - The Rust crate (`netconf-language-server`) and the **VS Code** extension are
-  versioned in lockstep at `0.1.0`; the Zed extension (`clients/zed`) is
+  versioned in lockstep at `0.2.0`; the Zed extension (`clients/zed`) is
   versioned separately (`0.0.1`).

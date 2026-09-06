@@ -1,6 +1,6 @@
 # NETCONF Language Server — Architecture
 
-> As-built architecture & decision record for the **implemented** server (v0.1.0).
+> As-built architecture & decision record for the **implemented** server (v0.2.0).
 > The LSP features in §7–§8 are all shipped — fold, format, highlight, pull
 > diagnostics, goto, hover, completion — and covered by unit + corpus tests
 > (§11). Instance-document features (M0–M5: XML/JSON read+write, diagnostics

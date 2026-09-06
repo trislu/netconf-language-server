@@ -8,6 +8,14 @@ and this extension adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-06
+
+### Changed
+
+- Bundled `netconf-language-server` updated to 0.2.0 — engine `yrepo` 0.3 with
+  the `parallel` feature makes workspace scans on large YANG trees faster.
+  Extension behavior is unchanged.
+
 ## [0.1.0] - 2026-09-05
 
 Initial release.

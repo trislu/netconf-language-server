@@ -1,6 +1,6 @@
 [package]
 name = "netconf-language-server"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "A language server implemented in rust for reading & writing NETCONF/YANG text"
 authors = ["Lu Kai <mailto:lukai@mail.ustc.edu.cn>"]

@@ -1143,6 +1143,9 @@ impl LanguageServer for Server {
         }
         let pos = params.text_document_position.position;
         let byte = self.caret_byte(&uri, pos).await?;
+        let Some(rope) = self.rope_for(&uri).await else {
+            return Ok(None);
+        };
         let repo = self.repo.read().await;
         let Some(root) = repo.statement(&uri) else {
             return Ok(None);
@@ -1154,7 +1157,7 @@ impl LanguageServer for Server {
         let Some(lib) = snap.lib.as_ref() else {
             return Ok(None);
         };
-        let items = completion::handle(root, byte, &scope, lib, &params);
+        let items = completion::handle(root, &rope, byte, &scope, lib, &params);
         drop(repo);
         Ok(items.map(CompletionResponse::Array))
     }

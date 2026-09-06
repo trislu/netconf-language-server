@@ -191,10 +191,8 @@ fn path_completions(
                 break;
             }
         }
-        match found {
-            Some(id) => cur = Some(id),
-            None => return None,
-        }
+        let id = found?;
+        cur = Some(id)
     }
     let kids: Vec<usize> = match cur {
         None => rec.top_nodes().to_vec(),

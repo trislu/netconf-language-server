@@ -253,10 +253,88 @@ pub(crate) fn resolve(
                 origin_range: arg.range.clone(),
             }
         }
+        // A `refine` inside a `uses` names a data node of the used grouping;
+        // jump to its definition in the grouping body (same-file groupings).
+        K::Refine => {
+            let target = refine_target_in_file(root, stmt, scope, lib)?;
+            let name_range = target
+                .arg
+                .as_ref()
+                .map(|a| a.range.clone())
+                .unwrap_or_else(|| target.range.clone());
+            Target {
+                url: url.to_string(),
+                target_range: name_range,
+                origin_range: arg.range.clone(),
+            }
+        }
         // A non-navigable statement (or a `uses-augment` descendant path).
         _ => return None,
     };
     Some(vec![target])
+}
+
+/// Walk the refine target path (descendant names) inside the grouping that
+/// the nearest enclosing `uses` instantiates. Grouping definitions in the
+/// same file are supported; cross-file groupings return `None`.
+fn refine_target_in_file<'a>(
+    root: &'a Statement,
+    refine: &Statement,
+    scope: &str,
+    lib: &Library,
+) -> Option<&'a Statement> {
+    use StatementKind as K;
+    let arg = refine.arg.as_ref()?;
+    let byte = arg.range.start.max(arg.range.end.saturating_sub(1));
+    // Deepest `uses` ancestor containing the refine argument.
+    let mut uses_stmt = None;
+    for s in root.preorder() {
+        if s.kind == K::Uses && !std::ptr::eq(s, refine) && s.range.contains(&byte) {
+            uses_stmt = Some(s);
+        }
+    }
+    let uses = uses_stmt?;
+    let uses_arg = uses.arg.as_ref()?;
+    let (prefix, gname) = split_ref(uses_arg.name());
+    let module = module_for(scope, prefix, lib)?;
+    if module != scope {
+        return None; // cross-file grouping: not resolvable from this file
+    }
+    let segs: Vec<&str> = arg.name().split('/').filter(|s| !s.is_empty()).collect();
+    let mut current = None;
+    for s in root.preorder() {
+        if s.kind == K::Grouping && s.arg.as_ref().is_some_and(|a| a.name() == gname) {
+            current = Some(s);
+            break;
+        }
+    }
+    let mut cur = current?;
+    for seg in segs {
+        let next = cur
+            .children
+            .iter()
+            .find(|c| is_data_stmt(&c.kind) && c.arg.as_ref().is_some_and(|a| a.name() == seg));
+        cur = next?;
+    }
+    Some(cur)
+}
+
+fn is_data_stmt(kind: &StatementKind) -> bool {
+    use StatementKind as K;
+    matches!(
+        kind,
+        K::Container
+            | K::Leaf
+            | K::LeafList
+            | K::List
+            | K::Choice
+            | K::Case
+            | K::Anydata
+            | K::Anyxml
+            | K::Notification
+            | K::Rpc
+            | K::Action
+    )
 }
 
 /// Convert resolved targets into LSP `LocationLink`s, mapping byte ranges with
@@ -440,6 +518,29 @@ mod tests {
         let hit = text_at(DEV, t[0].target_range.clone());
         assert!(
             hit.contains("mtu"),
+            "target text {hit:?} should name the leaf"
+        );
+    }
+
+    const RF: &str = "module rf {\n  namespace \"urn:rf\";\n  prefix rf;\n\
+      grouping cfg { container inner { leaf host { type string; } } }\n\
+      container app { uses cfg { refine inner/host { default \"x\"; } } }\n\
+    }\n";
+
+    #[test]
+    fn goto_refine_target_into_grouping() {
+        let mut repo = Repository::new();
+        repo.upsert("/rf.yang", RF.to_string());
+        let out = repo.compile();
+        let lib = out.library.expect("library");
+        let rope = Rope::from_str(RF);
+        let root = repo.statement("/rf.yang").expect("root");
+        let byte = RF.find("refine inner/host").unwrap() + "refine inner/".len() + 1;
+        let t = resolve(&rope, root, "/rf.yang", byte, "rf", &lib).expect("refine goto");
+        assert_eq!(t.len(), 1);
+        let hit = text_at(RF, t[0].target_range.clone());
+        assert!(
+            hit.contains("host"),
             "target text {hit:?} should name the leaf"
         );
     }

@@ -27,7 +27,7 @@ tree-sitter = "0.26"
 tree-sitter-xml = "0.7"
 tree-sitter-json = "0.24"
 
-yrepo = { version = "0.3", features = ["parallel"] }
+yrepo = { version = "0.4", features = ["parallel"] }
 
 [profile.release]
 strip = true

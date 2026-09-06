@@ -10,8 +10,7 @@ reading and writing **NETCONF / YANG** text documents. Which is:
 <p align="left">
 <b>🎯 Semantic Oriented</b> — 🧠 boost reading · 🔧 enhance writing<br>
 <b>🦀 Native Rust</b> — 0️⃣ zero runtime · 🚀 just launch<br>
-<b>⚡ Blazing Fast</b> — ⚙️ compile <b>2143</b> YANG files in <b>0.54&nbsp;s</b><br>
-<sub>pyang ≈ <b>55.96&nbsp;s</b> @ 16 procs &nbsp;·&nbsp; 705 <a href="https://github.com/YangModels/yang/tree/main/standard">standard</a> + 1438 <a href="https://github.com/YangModels/yang/tree/main/experimental">experimental</a></sub>
+<b>⚡ Blazing Fast</b> — 🚅 ~30s parsing · 💾 2.1 GB peak RAM for all <b>3.6 GB</b> <a href="https://github.com/YangModels/yang">YangModels/yang</a> files.
 </p>
 
 ## Features

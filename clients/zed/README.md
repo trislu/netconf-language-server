@@ -1,18 +1,36 @@
-# NETCONF (Zed extension)
+# NETCONF Language Support
 
-_This is a Zed extension for reading and writing YANG/NETCONF/RESTCONF files._
+This is a Zed extension for reading and writing **YANG**/**NETCONF**(xml)/**RESTCONF**(json) files.
 
-The extension registers the `netconf-language-server` for three languages:
+## Features
 
-- **YANG** — `*.yang` modules (authoring language provided by this extension).
-- **XML** — attach to the **XML** extension's language. Install the
-  marketplace extension "XML" so `.xml` files get a language (and its
-  highlighting); the server content-sniffs each `.xml` buffer and stays
-  dormant unless it is a NETCONF envelope/`<config>` payload.
-- **JSON** — Zed's built-in JSON language, same dormant behavior for
-  RFC 7951 instance documents.
+**Read** — diagnostics & hover:
 
-## Install `netconf-language-server`
+<p align="left">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/images/netconf-zed-yang-20260906.png" alt="YANG diagnostics & hover" width="720">
+</p>
+
+<p align="left">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/images/netconf-zed-xml-20260906.png" alt="XML (NETCONF) diagnostics & hover" width="720">
+</p>
+
+<p align="left">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/images/netconf-zed-json-20260906.png" alt="RFC 7951 JSON diagnostics & hover" width="720">
+</p>
+
+**Write** — completion:
+
+<p align="left">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/images/netconf-zed-xcomp-20260906.png" alt="XML completion" width="720">
+</p>
+
+<p align="left">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/images/netconf-zed-jcomp-20260906.png" alt="JSON completion" width="720">
+</p>
+
+> For more details, see the [LSP features guide](../docs/features.md) in the repo.
+
+## Installation
 
 1. Via cargo (_recommended_): `cargo install netconf-language-server`
 2. Build from source: <https://github.com/trislu/netconf-language-server>
@@ -61,43 +79,6 @@ on adds the server's statement-aware coloring:
 
 `"combined"` layers the server's tokens over the tree-sitter highlights;
 `"full"` uses only the server's tokens.
-
-## Features
-
-Authoring **YANG modules** (semantic highlighting, folding, formatting,
-goto/hover, completion, pull diagnostics) plus **NETCONF instance documents** —
-XML envelopes/`<config>` payloads and RFC 7951 JSON — with content-sniffed
-recognition (unmatched files stay dormant), diagnostics on elements/members,
-leaf _value_ validation, and RFC 7951/XML completion.
-
-See the [detailed LSP features guide](../docs/features.md) in the repo.
-
-## Demo
-
-**Read** — diagnostics & hover over **YANG**, **XML (NETCONF)**, and **RFC 7951
-JSON**:
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/images/netconf-zed-yang-20260906.png" alt="YANG diagnostics & hover" width="720">
-</p>
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/images/netconf-zed-xml-20260906.png" alt="XML (NETCONF) diagnostics & hover" width="720">
-</p>
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/images/netconf-zed-json-20260906.png" alt="RFC 7951 JSON diagnostics & hover" width="720">
-</p>
-
-**Write** — completion on XML elements and JSON members:
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/images/netconf-zed-xcomp-20260906.png" alt="XML completion" width="720">
-</p>
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/images/netconf-zed-jcomp-20260906.png" alt="JSON completion" width="720">
-</p>
 
 ## References
 

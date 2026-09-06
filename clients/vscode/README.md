@@ -1,71 +1,53 @@
-# NETCONF Language Server (for VS Code)
+# NETCONF Language Support
 
-[![Version](https://img.shields.io/vscode-marketplace/v/k19.netconf.svg)](https://marketplace.visualstudio.com/items?itemName=k19.netconf)
-[![Installs](https://img.shields.io/vscode-marketplace/i/k19.netconf.svg)](https://marketplace.visualstudio.com/items?itemName=k19.netconf)
-[![Rating](https://img.shields.io/vscode-marketplace/r/k19.netconf.svg)](https://marketplace.visualstudio.com/items?itemName=k19.netconf)
-[![License](https://img.shields.io/github/license/trislu/netconf-language-server.svg)](../../LICENSE)
+<p align="left">
+  <!-- marketplace-readme:remove-start -->
+  <a href="https://marketplace.visualstudio.com/items?itemName=k19.netconf"><img src="https://img.shields.io/badge/VS%20Code%20Marketplace-Install-007ACC?logo=visualstudiocode&logoColor=white&style=for-the-badge" alt="Install from VS Code Marketplace"></a>
+  <!-- marketplace-readme:remove-end -->
+  <img src="https://img.shields.io/github/v/release/trislu/netconf-language-server?style=for-the-badge&label=Version" alt="Version" />
+  <img src="https://vsmarketplacebadges.dev/installs-short/k19.netconf.svg?style=for-the-badge" alt="Installs" />
+</p>
 
 VS Code extension for writing NETCONF **YANG** modules with the
 [NETCONF Language Server](../../README.md).
 
 ## Features
 
-Authoring **YANG modules** (semantic highlighting, folding, formatting,
-goto/hover, completion, pull diagnostics) plus **NETCONF instance documents** —
-XML envelopes/`<config>` payloads and RFC 7951 JSON — with content-sniffed
-recognition (unmatched files stay dormant), diagnostics on elements/members,
-leaf *value* validation, and RFC 7951/XML completion. The editor also offers
-`NETCONF: Insert …` commands for `hello` / `get-config` / `edit-config` /
-`<config>` payloads.
+**Read** — diagnostics & hover:
 
-See the [detailed LSP features guide](../docs/features.md) in the repo.
-
-### Demo
-
-**Read — diagnostics & hover** over **YANG**, **XML (NETCONF)**, and **RFC 7951
-JSON**:
-
-<p align="center">
+<p align="left">
   <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/clients/vscode/resources/images/netconf-vscode-yang-20260905.png" alt="YANG diagnostics & hover" width="720">
 </p>
 
-<p align="center">
+<p align="left">
   <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/clients/vscode/resources/images/netconf-vscode-xml-20260905.png" alt="XML (NETCONF) diagnostics & hover" width="720">
 </p>
 
-<p align="center">
+<p align="left">
   <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/clients/vscode/resources/images/netconf-vscode-json-20260905.png" alt="RFC 7951 JSON diagnostics & hover" width="720">
 </p>
 
-**Write — completion** on XML elements and JSON members:
+**Write** — completion:
 
-<p align="center">
+<p align="left">
   <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/clients/vscode/resources/images/netconf-vscode-xcomp-20260905.png" alt="XML completion" width="720">
 </p>
 
-<p align="center">
+<p align="left">
   <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/clients/vscode/resources/images/netconf-vscode-jcomp-20260905.png" alt="JSON completion" width="720">
 </p>
+
+> For more details, see the [LSP features guide](../docs/features.md) in the repo.
 
 ## Configuration
 
 - `netconf.indentSize` (default `4`): spaces per indentation level when
   formatting.
 
-## Development
+## References
 
-The server binary is resolved from:
-
-1. `__DEBUG_LSP_SERVER` env var (used by `.vscode/launch.json`), or
-2. the bundled per-platform binary under `resources/bin/`
-   (`netconf-language-server-linux`, `netconf-language-server-darwin`, `netconf-language-server-win32.exe`).
-
-```bash
-cargo build                                        # build the server
-npm install                                        # client deps
-npm run compile                                    # tsc + eslint + esbuild
-npm run build-server-and-client                    # cargo build + npm compile
-```
-
-Press F5 from the repo root to launch the Extension Development Host against
-`target/debug/netconf-language-server`.
+- [YANG](https://www.rfc-editor.org/info/rfc6020)
+- [NETCONF](https://www.rfc-editor.org/info/rfc6241)
+- [YANG 1.1](https://www.rfc-editor.org/info/rfc7950)
+- [YANG JSON Encoding](https://www.rfc-editor.org/info/rfc7951)
+- [YANG Library](https://www.rfc-editor.org/info/rfc8525/)

@@ -98,7 +98,7 @@ pub(crate) fn handle(
                     .collect(),
             )
         }
-        K::Path => path_completions(rope, stmt, byte, scope, lib),
+        K::Path | K::Augment | K::Deviation => path_completions(rope, stmt, byte, scope, lib),
         _ => None,
     }
 }

@@ -1,10 +1,12 @@
 //! Server state + the `LanguageServer` implementation (thin dispatch).
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{
     OnceLock,
     atomic::{AtomicU64, Ordering},
 };
+use std::time::Instant;
 
 use moka::future::Cache;
 use ropey::Rope;
@@ -439,7 +441,14 @@ impl Server {
         // share the one cell and wait for the single init.
         self.scan
             .get_or_init(|| async {
+                let start = Instant::now();
                 self.scan_workspace().await;
+                let duration = start.elapsed();
+                Window::log(info!(format!(
+                    "workspace scan finished in {:.6}s",
+                    duration.as_secs_f64()
+                )))
+                .await;
             })
             .await;
     }
@@ -455,7 +464,11 @@ impl Server {
             Window::log(warning!("scan skipped: cannot resolve root path")).await;
             return;
         };
-        let mut scanned = 0usize;
+        // Feed the on-disk modules (minus any open buffer) as one batch of
+        // `(url, path)` pairs: yrepo reads *and* parses the files in parallel
+        // (feature `parallel`) and never buffers the whole workspace as text,
+        // so scan memory stays flat however many modules there are.
+        let mut batch: Vec<(String, PathBuf)> = Vec::new();
         for path in workspace::walk_yang_files(&root_path) {
             let Some(url) = workspace::path_to_url(&path) else {
                 continue;
@@ -467,11 +480,13 @@ impl Server {
             if self.docs.contains_key(&url) {
                 continue;
             }
-            if let Ok(text) = std::fs::read_to_string(&path) {
-                self.repo.write().await.upsert(url, text);
-                scanned += 1;
-            }
+            batch.push((url, path));
         }
+        let scanned = if batch.is_empty() {
+            0
+        } else {
+            self.repo.write().await.upsert_many_files(batch)
+        };
         self.bump();
         Window::log(info!(format!("workspace scan loaded {scanned} yang files"))).await;
         // Documents opened while the scan was still running may have stale

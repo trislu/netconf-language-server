@@ -1,8 +1,13 @@
 //! Temporary diagnostic inspector: compile a directory of *.yang files with
 //! yrepo and summarize problems (parse errors, full-document errors, codes).
+//!
+//! Ingest is parallel: `Repository::upsert_many_files` reads *and* parses
+//! every file off-thread (`yrepo` `parallel` feature) without ever buffering
+//! the whole workspace as text.
 
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::time::Instant;
 
 fn walk(root: &Path, out: &mut Vec<std::path::PathBuf>) {
     if let Ok(entries) = std::fs::read_dir(root) {
@@ -18,21 +23,25 @@ fn walk(root: &Path, out: &mut Vec<std::path::PathBuf>) {
 }
 
 fn main() {
+    let start = Instant::now();
     let dir = std::env::args().nth(1).unwrap_or_else(|| ".".into());
     let root = Path::new(&dir);
     let mut files = Vec::new();
     walk(root, &mut files);
     files.sort();
 
+    let total = files.len();
     let mut repo = yrepo::Repository::new();
-    for f in &files {
-        let Ok(text) = std::fs::read_to_string(f) else {
-            continue;
-        };
-        repo.upsert(f.to_string_lossy().to_string(), text);
-    }
+    // Parallel ingest: yrepo reads *and* parses every file off-thread
+    // (`parallel` feature); only the in-flight file is in memory.
+    let loaded = repo.upsert_many_files(files.into_iter().map(|p| {
+        let url = p.to_string_lossy().to_string();
+        (url, p)
+    }));
     let out = repo.compile();
-    println!("files: {}", files.len());
+    let duration = start.elapsed();
+    println!("compiled {} files in {:.3}s", total, duration.as_secs_f64());
+    println!("files: {total} (loaded {loaded})");
     println!("total diagnostics: {}", out.diagnostics.len());
 
     let mut by_code: BTreeMap<String, usize> = BTreeMap::new();

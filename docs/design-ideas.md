@@ -91,6 +91,10 @@ I don't want to explain; they smell like a patch semantic for something not
 correctly designed in the first place. If that is indeed the case, I believe the
 solution is organizational/commercial, not grammatical.
 
+### §004. Don't use plus character ("+") for string concatenation if you have an alternative option
+
+Just don't. If whitespace-charaters/word-wrap becomes a key factor of decision making, then the model is shit.
+
 ## Future lean on this language server design
 
 From my point of view, what the NETCONF ecosystem — or community, if there is

@@ -39,7 +39,15 @@ async fn main() {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
     let (service, socket) = LspService::new(Server::new);
+    // Serve messages strictly one at a time, in arrival order
+    // (`concurrency_level(1)`). The open-closure state is notification-driven
+    // and cross-document (did_open/did_change/did_close mutate the shared
+    // repository + closure), so handlers must observe each other's effects in
+    // client order — see tower-lsp-server#36. The default concurrency of 4
+    // gives no such ordering. Trade-off: `$/cancelRequest` cannot preempt a
+    // running handler; handlers are quick (compile is cached per generation).
     tower_lsp_server::Server::new(stdin, stdout, socket)
+        .concurrency_level(1)
         .serve(service)
         .await;
 }

@@ -293,6 +293,16 @@ struct Snapshot {           // immutable compile result, cached by generation
    appear — matching what an editor needs; the whole-tree scan it replaces is
    gone by design.
 
+**Ordering.** Handlers mutate shared, cross-document state (open set,
+repository, closure) and read it back (snapshot). tower-lsp dispatches
+concurrently by default (no ordering between notifications or between
+notifications and requests — tower-lsp-server#36), so the server runs at
+`concurrency_level(1)`: every message is handled to completion in arrival
+order, giving didOpen/didChange/didClose → feature-request the framework-level
+serial guarantee the serving model relies on. Cost: `$/cancelRequest` cannot
+preempt a running handler (handlers are quick; `snapshot()` is cached per
+generation).
+
 Because `compile()` is non-incremental and is CPU work on the request path, we cache its result:
 
 - `snapshot()` returns the cached `Snapshot` when its `generation` equals the current `Server.generation`; otherwise it recompiles (`repo.read().await.compile()`), stores the new `Arc<Library>` + diagnostics, and caches them. v1 accepts a full recompile per change batch (small module counts are typical when authoring) and runs it on the request path under the repo read-lock — no `spawn_blocking` needed because compile is read-only against the repo.

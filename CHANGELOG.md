@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Open buffers keep full parse views; reachable on-disk modules parse
   text-light.
 
+### Changed
+
+- **Handlers run serially in arrival order** (`Server::concurrency_level(1)`):
+  the open-closure state is notification-driven and cross-document, so
+  didOpen/didChange/didClose and the feature requests after them must observe
+  each other in client order (tower-lsp defaults to 4-way concurrent dispatch
+  with no ordering). Trade-off: `$/cancelRequest` cannot preempt a running
+  handler.
+
 ## [0.2.0] - 2026-09-06
 
 ### Added

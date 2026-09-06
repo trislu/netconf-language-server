@@ -94,9 +94,18 @@ impl Diagnostics {
     /// dependency was opened) until the user manually reopened the file.
     /// Call this after any repo change that can affect other open documents:
     /// a document opened/closed, or the workspace scan completing.
-    pub(crate) async fn refresh() {
+    ///
+    /// Fire-and-forget on purpose: `workspace/diagnostic/refresh` is a client
+    /// *request*, so awaiting it inside a handler would stall the server until
+    /// the client answers. Handlers run serially (`concurrency_level(1)`), so
+    /// the refresh is spawned instead — the client reply is still awaited on
+    /// the background task, but no handler slot is occupied meanwhile.
+    pub(crate) fn refresh() {
         if let Some(client) = CLIENT_INSTANCE.get() {
-            let _ = client.workspace_diagnostic_refresh().await;
+            let client = client.clone();
+            tokio::spawn(async move {
+                let _ = client.workspace_diagnostic_refresh().await;
+            });
         }
     }
 }

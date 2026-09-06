@@ -729,7 +729,7 @@ impl LanguageServer for Server {
             workspace::DocLang::Yang => {
                 self.upsert_yang(&uri, &text).await;
                 // A newly opened module can satisfy imports of already-open docs.
-                Diagnostics::refresh().await;
+                Diagnostics::refresh();
             }
             // XML/JSON are never fed to `yrepo`; just observe their intent (M0).
             workspace::DocLang::Xml | workspace::DocLang::Json => self.recognize(&uri).await,
@@ -759,7 +759,7 @@ impl LanguageServer for Server {
         if workspace::is_yang(&uri) {
             self.revert_yang(&uri).await;
             // A module going away may break other documents' imports.
-            Diagnostics::refresh().await;
+            Diagnostics::refresh();
         }
     }
 

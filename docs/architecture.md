@@ -136,10 +136,7 @@ netconf-language-server/
 │   ├── xcomp.rs            # XML element completion (M2)
 │   ├── template.rs         # NETCONF envelope skeleton templates + insert command (M2)
 │   ├── jcomp.rs            # JSON RFC 7951 member completion (M4)
-│   ├── valcheck.rs         # leaf value validation (scalar-only) + value defaults (M5)
-│   └── bin/
-│       ├── inspect.rs      # dev tool: yrepo diagnostic summary over a *.yang tree
-│       └── probe.rs        # dev tool: per-file diagnostic probe with source context
+│   └── valcheck.rs         # leaf value validation (scalar-only) + value defaults (M5)
 ├── clients/vscode/         # VS Code extension (mirror gemcap; yang+xml+json selectors, template commands)
 ├── clients/zed/            # Zed extension: same server, YANG/XML/JSON read + write
 ├── examples/               # *.yang + XML/JSON instance docs for manual testing
@@ -646,7 +643,7 @@ JSON languages and exposes the same **read** (diagnostics & hover) and **write**
 - **`#[non_exhaustive]`** on `StatementKind`, `DiagnosticCode` → wildcard arms (`K::Unknown(_)` / `_`) in goto/hover/highlight/diagnostic.
 - **Non-goals v1**: `.yin`, network/`yangcatalog` fetch, *leafref / `instance-identifier` XPath resolution* (and leafref value *chasing*, D31 — scalar leaf *value* checks are in, M5), full deviation add/delete/replace semantics, incremental repo compile, multi-workspace-folder. *(Type-chain & identity-derivation existence resolution and the leaf restriction facets now come from `yrepo`; `union` values are deliberately not checked, D31.)*
 - **Logging** discipline as gemcap (window/logMessage only via `client.rs`; `#![deny(clippy::print_stdout)]`/`print_stderr`). Errors surfaced as LSP errors, never panics on user content.
-- **Tests**: unit tests in `goto.rs`/`hover.rs` over a scripted `yrepo` repository, plus the `semantic_token.rs` suite — delta-decode helpers, multi-line token splitting, per-shape assertions (`highlight_known_shapes_are_covered`) and a **coverage regression guard** over the vendored `testdata/highlight` corpus (`highlight_coverage_matches_baseline` vs `baseline.json`: 7 files, 275 word tokens, 0 uncovered; re-bless with the ignored `bless_highlight_baseline`). Dev-only binaries `src/bin/inspect.rs`/`probe.rs` inspect `yrepo` diagnostics over a tree / single file. A full stdio JSON-RPC integration harness is still future work.
+- **Tests**: unit tests in `goto.rs`/`hover.rs` over a scripted `yrepo` repository, plus the `semantic_token.rs` suite — delta-decode helpers, multi-line token splitting, per-shape assertions (`highlight_known_shapes_are_covered`) and a **coverage regression guard** over the vendored `testdata/highlight` corpus (`highlight_coverage_matches_baseline` vs `baseline.json`: 7 files, 275 word tokens, 0 uncovered; re-bless with the ignored `bless_highlight_baseline`). Dev tools for auditing `yrepo` over a tree / single file (`inspect`/`probe`) and profiling it (`perf`, time + RSS) live in the sibling `yrepo` crate as `examples/`. A full stdio JSON-RPC integration harness is still future work.
 
 ---
 
@@ -666,7 +663,7 @@ own module behind a `capability()` + `handle(…)` shape and is dispatched from
 | 6 | Diagnostics | `diagnostic.rs` + `workspace.rs` | pull + `refresh`, workspace scan, conflict-prefix |
 | 7 | Goto / Hover | `goto.rs`/`hover.rs` | against the §6.1 `Library` snapshot |
 | 8 | Completion | `completion.rs` | `type` / identity `base` args |
-| 9 | VS Code client & tooling | `clients/vscode`, `.vscode/*`, `src/bin/*` | F5 extension debugging; `inspect`/`probe` dev bins |
+| 9 | VS Code client & tooling | `clients/vscode`, `.vscode/*` | F5 extension debugging (yrepo audit/perf tools now live in `yrepo/examples/`) |
 
 ### Instance documents (M0–M5)
 

@@ -72,7 +72,7 @@ impl Server {
         Self {
             root_uri: OnceLock::new(),
             repo: RwLock::new(yrepo::Repository::new()),
-            docs: Cache::new(4096),
+            docs: Cache::new(u32::MAX as u64), // unbounded; the client controls open buffers
             config: OnceLock::new(),
             generation: AtomicU64::new(0),
             snap: RwLock::new(None),

@@ -23,9 +23,10 @@ use tower_lsp_server::{
         FoldingRangeProviderCapability, GotoDefinitionParams, GotoDefinitionResponse, Hover,
         HoverContents, HoverParams, HoverProviderCapability, InitializeParams, InitializeResult,
         InitializedParams, LSPAny, Location, LocationLink, MarkupContent, MarkupKind,
-        NumberOrString, OneOf, Position, Range, ReferenceParams, SemanticTokensParams,
-        SemanticTokensResult, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
-        TextDocumentSyncKind, TextEdit, Uri, WorkspaceEdit,
+        NumberOrString, OneOf, Position, PrepareRenameResponse, Range, ReferenceParams,
+        RenameParams, SemanticTokensParams, SemanticTokensResult, ServerCapabilities, ServerInfo,
+        TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit,
+        Uri, WorkspaceEdit,
     },
 };
 use yrepo::{Library, Statement, StatementKind};
@@ -551,6 +552,36 @@ fn syntax_broken(source: &str) -> bool {
     })
 }
 
+/// The byte range of the identifier token containing `byte` in `rope`
+/// (rename `prepare` placeholder; identifiers may contain `-`, `_`, `.`).
+fn range_for_word(rope: &Rope, byte: usize) -> std::ops::Range<usize> {
+    let len = rope.len_bytes();
+    if byte >= len {
+        return byte..byte;
+    }
+    let is_word = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.';
+    let text = rope.to_string();
+    let as_bytes = text.as_bytes();
+    let mut start = byte;
+    let mut end = byte;
+    while start > 0 && is_word(as_bytes[start - 1]) {
+        start -= 1;
+    }
+    while end < len && is_word(as_bytes[end]) {
+        end += 1;
+    }
+    start..end
+}
+
+fn is_valid_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+}
+
 impl LanguageServer for Server {
     async fn initialize(&self, params: InitializeParams) -> jsonrpc::Result<InitializeResult> {
         #[allow(deprecated)]
@@ -571,6 +602,7 @@ impl LanguageServer for Server {
                 document_formatting_provider: Some(OneOf::Left(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Left(true)),
+                rename_provider: Some(OneOf::Left(true)),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 completion_provider: Some(completion::capability()),
                 diagnostic_provider: Some(DiagnosticServerCapabilities::Options(
@@ -771,6 +803,126 @@ impl LanguageServer for Server {
             });
         }
         Ok(Some(out))
+    }
+
+    async fn prepare_rename(
+        &self,
+        params: TextDocumentPositionParams,
+    ) -> jsonrpc::Result<Option<PrepareRenameResponse>> {
+        let uri = workspace::canon_url(&params.text_document.uri.to_string());
+        if !workspace::is_yang(&uri) {
+            return Ok(None);
+        }
+        let Some(rope) = self.rope_for(&uri).await else {
+            return Ok(None);
+        };
+        let byte = self.caret_byte(&uri, params.position).await?;
+        let (def, range) = {
+            let repo = self.repo.read().await;
+            let Some(root) = repo.statement(&uri) else {
+                return Ok(None);
+            };
+            let Some(scope) = Self::module_scope(root) else {
+                return Ok(None);
+            };
+            let snap = self.snapshot().await;
+            let Some(lib) = snap.lib.as_ref() else {
+                return Ok(None);
+            };
+            let Some(def) = references::def_at(&rope, root, byte, &scope, lib) else {
+                return Ok(None);
+            };
+            (def, byte)
+        };
+        let local = references::local_name_range(&rope, range_for_word(&rope, range));
+        Ok(Some(PrepareRenameResponse::RangeWithPlaceholder {
+            range: convert::range_to_lsp(&rope, local),
+            placeholder: def.local,
+        }))
+    }
+
+    async fn rename(&self, params: RenameParams) -> jsonrpc::Result<Option<WorkspaceEdit>> {
+        let tdp = &params.text_document_position;
+        let uri = workspace::canon_url(&tdp.text_document.uri.to_string());
+        if !workspace::is_yang(&uri) {
+            return Ok(None);
+        }
+        if !is_valid_identifier(&params.new_name) {
+            return Err(jsonrpc::Error::invalid_params(format!(
+                "invalid symbol name '{}'",
+                params.new_name
+            )));
+        }
+        self.ensure_scanned().await;
+        let byte = self.caret_byte(&uri, tdp.position).await?;
+        let Some(rope) = self.rope_for(&uri).await else {
+            return Ok(None);
+        };
+        let (_local, hits) = {
+            let repo = self.repo.read().await;
+            let Some(root) = repo.statement(&uri) else {
+                return Ok(None);
+            };
+            let Some(scope) = Self::module_scope(root) else {
+                return Ok(None);
+            };
+            let snap = self.snapshot().await;
+            let Some(lib) = snap.lib.as_ref() else {
+                return Ok(None);
+            };
+            let Some(def) = references::def_at(&rope, root, byte, &scope, lib) else {
+                return Ok(None);
+            };
+            let mut urls: Vec<String> = Vec::new();
+            for m in lib.modules() {
+                for u in m.source_urls() {
+                    let s = u.to_string();
+                    if !urls.contains(&s) {
+                        urls.push(s);
+                    }
+                }
+            }
+            for sm in lib.submodules() {
+                let s = sm.url().to_string();
+                if !urls.contains(&s) {
+                    urls.push(s);
+                }
+            }
+            let docs: Vec<(String, &Statement, String)> = urls
+                .iter()
+                .filter_map(|u| {
+                    let st = repo.statement(u)?;
+                    let sc = Self::module_scope(st)?;
+                    Some((u.clone(), st, sc))
+                })
+                .collect();
+            let hits = references::find_references(&def, &docs, lib, true);
+            (def.local, hits)
+        };
+        if hits.is_empty() {
+            return Ok(None);
+        }
+        let mut changes: HashMap<String, Vec<TextEdit>> = HashMap::new();
+        for (u, full) in hits {
+            let Some(rrope) = self.rope_for(&u).await else {
+                continue;
+            };
+            let local = references::local_name_range(&rrope, full);
+            changes.entry(u.clone()).or_default().push(TextEdit {
+                range: convert::range_to_lsp(&rrope, local),
+                new_text: params.new_name.clone(),
+            });
+        }
+        let mut uri_map: HashMap<Uri, Vec<TextEdit>> = HashMap::new();
+        for (u, edits) in changes {
+            if let Ok(lu) = u.parse::<Uri>() {
+                uri_map.insert(lu, edits);
+            }
+        }
+        Ok(Some(WorkspaceEdit {
+            changes: Some(uri_map),
+            ..Default::default()
+        }))
     }
 
     async fn semantic_tokens_full(

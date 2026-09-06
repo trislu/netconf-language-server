@@ -152,6 +152,20 @@ pub(crate) fn find_references(
     hits
 }
 
+/// The byte range of the LOCAL (unprefixed) part of an argument occurrence
+/// whose full text `rope[full]` may be prefix-qualified (`a:speed` → `speed`).
+/// Rename edits must replace only the local part.
+pub(crate) fn local_name_range(rope: &Rope, full: Range<usize>) -> Range<usize> {
+    let text = rope
+        .get_byte_slice(full.clone())
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+    match text.find(':') {
+        Some(i) => (full.start + i + 1)..full.end,
+        None => full,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,6 +230,21 @@ mod tests {
         // include_declaration adds the definition in A.
         let hits = find_references(&def, &docs, &lib, true);
         assert_eq!(hits.len(), 4, "hits: {hits:?}");
+    }
+
+    #[test]
+    fn local_name_range_strips_prefix_keeps_unprefixed() {
+        let text = "type a:speed; type own;";
+        let rope = Rope::from_str(text);
+        let start = text.find("a:speed").unwrap();
+        let full = start..start + "a:speed".len();
+        let r = local_name_range(&rope, full.clone());
+        assert_eq!(&text[r.clone()], "speed");
+        let start2 = text.find("type own").unwrap() + "type ".len();
+        let full2 = start2..start2 + "own".len();
+        let r2 = local_name_range(&rope, full2.clone());
+        assert_eq!(r2, full2);
+        assert_eq!(&text[r2.clone()], "own");
     }
 
     #[test]

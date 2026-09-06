@@ -19,6 +19,7 @@ mod inst_map;
 mod jcomp;
 mod jmap;
 mod json;
+mod references;
 mod schema_idx;
 mod semantic_token;
 mod server;

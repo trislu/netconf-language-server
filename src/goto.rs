@@ -13,7 +13,7 @@ use yrepo::{Library, Statement, StatementKind};
 use crate::{client::Window, convert, log};
 
 /// The RFC 7950 built-in type names (used to skip goto on `type` args).
-const BUILTIN_TYPES: &[&str] = &[
+pub(crate) const BUILTIN_TYPES: &[&str] = &[
     "binary",
     "bits",
     "boolean",

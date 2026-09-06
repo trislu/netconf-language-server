@@ -22,9 +22,10 @@ use tower_lsp_server::{
         ExecuteCommandOptions, ExecuteCommandParams, FoldingRange, FoldingRangeParams,
         FoldingRangeProviderCapability, GotoDefinitionParams, GotoDefinitionResponse, Hover,
         HoverContents, HoverParams, HoverProviderCapability, InitializeParams, InitializeResult,
-        InitializedParams, LSPAny, LocationLink, MarkupContent, MarkupKind, NumberOrString, OneOf,
-        Position, Range, SemanticTokensParams, SemanticTokensResult, ServerCapabilities,
-        ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Uri, WorkspaceEdit,
+        InitializedParams, LSPAny, Location, LocationLink, MarkupContent, MarkupKind,
+        NumberOrString, OneOf, Position, Range, ReferenceParams, SemanticTokensParams,
+        SemanticTokensResult, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
+        TextDocumentSyncKind, TextEdit, Uri, WorkspaceEdit,
     },
 };
 use yrepo::{Library, Statement, StatementKind};
@@ -35,7 +36,8 @@ use crate::{
     config::Config,
     convert, diagnostic,
     document::Document,
-    fold, format, goto, hover, info, inst, schema_idx, semantic_token, warning, workspace,
+    fold, format, goto, hover, info, inst, references, schema_idx, semantic_token, warning,
+    workspace,
 };
 
 #[derive(Clone)]
@@ -568,6 +570,7 @@ impl LanguageServer for Server {
                 folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
                 document_formatting_provider: Some(OneOf::Left(true)),
                 definition_provider: Some(OneOf::Left(true)),
+                references_provider: Some(OneOf::Left(true)),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 completion_provider: Some(completion::capability()),
                 diagnostic_provider: Some(DiagnosticServerCapabilities::Options(
@@ -694,6 +697,80 @@ impl LanguageServer for Server {
         };
         client::Edits::apply(edit).await;
         Ok(None)
+    }
+
+    async fn references(&self, params: ReferenceParams) -> jsonrpc::Result<Option<Vec<Location>>> {
+        let tdp = &params.text_document_position;
+        let uri = workspace::canon_url(&tdp.text_document.uri.to_string());
+        if !workspace::is_yang(&uri) {
+            return Ok(None);
+        }
+        self.ensure_scanned().await;
+        let byte = match self.caret_byte(&uri, tdp.position).await {
+            Ok(b) => b,
+            Err(_) => return Ok(None),
+        };
+        let include_decl = params.context.include_declaration;
+        let Some(rope) = self.rope_for(&uri).await else {
+            return Ok(None);
+        };
+        let hits = {
+            let repo = self.repo.read().await;
+            let Some(root) = repo.statement(&uri) else {
+                return Ok(None);
+            };
+            let Some(scope) = Self::module_scope(root) else {
+                return Ok(None);
+            };
+            let snap = self.snapshot().await;
+            let Some(lib) = snap.lib.as_ref() else {
+                return Ok(None);
+            };
+            let Some(def) = references::def_at(&rope, root, byte, &scope, lib) else {
+                return Ok(None);
+            };
+            let mut urls: Vec<String> = Vec::new();
+            for m in lib.modules() {
+                for u in m.source_urls() {
+                    let s = u.to_string();
+                    if !urls.contains(&s) {
+                        urls.push(s);
+                    }
+                }
+            }
+            for sm in lib.submodules() {
+                let s = sm.url().to_string();
+                if !urls.contains(&s) {
+                    urls.push(s);
+                }
+            }
+            let docs: Vec<(String, &Statement, String)> = urls
+                .iter()
+                .filter_map(|u| {
+                    let st = repo.statement(u)?;
+                    let sc = Self::module_scope(st)?;
+                    Some((u.clone(), st, sc))
+                })
+                .collect();
+            references::find_references(&def, &docs, lib, include_decl)
+        };
+        if hits.is_empty() {
+            return Ok(Some(Vec::new()));
+        }
+        let mut out = Vec::with_capacity(hits.len());
+        for (u, range) in hits {
+            let Some(rrope) = self.rope_for(&u).await else {
+                continue;
+            };
+            let Ok(luri) = u.parse::<Uri>() else {
+                continue;
+            };
+            out.push(Location {
+                uri: luri,
+                range: convert::range_to_lsp(&rrope, range),
+            });
+        }
+        Ok(Some(out))
     }
 
     async fn semantic_tokens_full(

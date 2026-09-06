@@ -1,15 +1,20 @@
 # Serving very large YANG trees (catalog + closure + text-light)
 
-Status: design (2026-09-06). Motivation & measurements: yrepo
-`docs/memory-findings.md` (full-parse retention ~0.1–0.35 MB per real module,
-catalog ~7 KB/file, text-light −16% ingest; a 163k-file full compile cannot
-fit one process). This note maps the serving path onto the language server.
+Status: implemented (phases A + B), benchmark pending (phase C) — 2026-09-06.
+Motivation & measurements: yrepo `docs/memory-findings.md` (full-parse
+retention ~0.1–0.35 MB per real module, catalog ~7 KB/file, text-light −16%
+ingest; a 163k-file full compile cannot fit one process).
 
-## Current behavior (to replace)
+## Behavior now
 
-`Server::scan_workspace` upserts every on-disk `.yang` file into one yrepo
-`Repository` (full parse of each) and `snapshot()` compiles all of them. Both
-retention and compile scale with the whole tree.
+The workspace is indexed **header-only** (`fill_catalog`: `Catalog::scan` per
+file, ~7 KB/file, no full parses) and the yrepo `Repository` holds only the
+**open closure** — open buffers (full parse) plus every on-disk module they
+can reach through the catalog (imports/includes with revision-date pins,
+belongs-to parents), parsed text-light (`sync_open_closure`). `snapshot()`
+compiles that repository, so both retention and compile cost scale with what
+the user is looking at, not the tree. See `architecture.md` §6.1 for the flow
+and the closure.rs helpers.
 
 ## Target serving model
 
@@ -57,14 +62,17 @@ retention and compile scale with the whole tree.
 - Performance: repeated opens re-parse; per-open cost bounded by closure size.
   Warm catalog should avoid re-reading headers after first scan.
 
-## Suggested phases (each with memstep/memcomp or LS integration tests)
+## Phases (each with memstep/memcomp or LS integration tests)
 
 A. yrepo: catalog registry with (name, rev) canonicalization + import/include
-   lookup API (`CatalogIndex::lookup(name, rev) -> url/path`); repository
-   `compile_closure(roots, resolver)` helper. (Some building blocks exist in
-   `examples/closure.rs`.)
-B. LS: replace `scan_workspace` with catalog fill; `snapshot()` compiles the
-   open-closure Repository; keep diagnostics/hover/goto/references/rename
-   tests green on existing small workspaces (regression gate).
+   lookup API (`CatalogIndex::resolve(name, rev)`) and closure building
+   (`build_closure_repository`; `examples/closure.rs` runs it). **DONE**
+   (yrepo commits: header-only `Catalog`/`Catalog::scan`, `CatalogIndex`,
+   pinned `resolve`, text-light parse mode).
+B. LS: `fill_catalog` + `sync_open_closure` replace the whole-tree scan;
+   `snapshot()` compiles the open-closure Repository; the feature unit tests
+   stay green (regression gate). **DONE** (this repo: `closure.rs`, `server.rs`
+   sync paths). Open buffers parse full; closure members parse text-light.
 C. Benchmarks: open N real modules in a synthetic giant tree; record wall
    time, RSS curve (memstep logs) and per-feature latency; iterate.
+   **PENDING** (needs the giant sample or a synthetic stand-in).

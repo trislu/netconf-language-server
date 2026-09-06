@@ -248,12 +248,14 @@ Server state — a **shared, workspace-wide** repository plus a cached compile s
 // src/server.rs
 struct Server {
     root_uri: OnceLock<Uri>,
-    repo: tokio::sync::RwLock<yrepo::Repository>,  // upsert/remove are &mut
+    repo: tokio::sync::RwLock<yrepo::Repository>,  // open-closure repository (§6.1)
+    catalog: RwLock<Option<Arc<yrepo::CatalogIndex>>>,  // header-only workspace index
+    open_yang: RwLock<HashSet<String>>,  // urls of open YANG buffers (closure roots)
     docs: moka::future::Cache<String, Arc<Document>>,   // per-doc text (§4)
     config: OnceLock<Config>,                            // §9
-    generation: AtomicU64,   // bumped on every upsert/remove/scan
+    generation: AtomicU64,   // bumped on every repo-affecting event
     snap: RwLock<Option<Snapshot>>,
-    scan: tokio::sync::OnceCell<()>,   // one-time workspace scan (§6.1)
+    scan: tokio::sync::OnceCell<()>,   // one-time workspace catalog build (§6.1)
 }
 
 struct Snapshot {           // immutable compile result, cached by generation
@@ -263,25 +265,38 @@ struct Snapshot {           // immutable compile result, cached by generation
 }
 ```
 
-### 6.1 Who gets upserted
+### 6.1 Who gets upserted — the OPEN CLOSURE
 
-`yrepo` resolves imports/includes **only among documents you `upsert`**. Therefore goto/hover/diagnostics across files require that **every reachable `.yang` in the workspace is in the repository**, not just open buffers. Implemented in `workspace.rs` + `server.rs`:
+`yrepo` resolves imports/includes **only among documents you `upsert`**. Cross-file goto/hover/diagnostics therefore need, per open buffer, the modules it can actually reach — not the whole tree. Retention/compile cost scales with what the user is looking at, not with workspace size (the catalog+closure serving model; measurements in yrepo `docs/memory-findings.md`, design in `docs/serving-large-trees.md`). Implemented in `workspace.rs` + `server.rs` + `closure.rs`:
 
-1. **Workspace scan** (`scan_workspace`): `workspace::walk_yang_files` recursively
-   finds `*.yang` under the root URI — skipping `target`/`.git`/`node_modules`/
-   `.vscode`/`dist` — and every file that is **not** an open (dirty) buffer is
-   collected into a single `(url, path)` batch fed to
-   `Repository::upsert_many_files` in one call (yrepo's `parallel` feature reads
-   *and* parses the batch off-thread, one file in memory at a time; the call
-   returns how many it committed), then it bumps the generation and calls
-   `Diagnostics::refresh`. It runs **exactly once**, lazily, guarded by `Server.scan` (`OnceCell`) via `ensure_scanned()`: the first caller (`initialized`, or an early `textDocument/diagnostic` pull) starts it and every other caller awaits the same scan. This prevents transient "import not open"/"augment target not found" errors computed against a half-scanned repo.
-2. Open buffers are upserted on `didOpen`/`didChange` (full text) and re-upserted with fresh text; a doc that is both open and on disk prefers buffer content (the scan skips open docs). `didClose` re-upserts the on-disk text or removes the doc (§4).
+1. **Workspace catalog** (`fill_catalog`, runs once via `Server.scan`/`ensure_scanned`):
+   `workspace::walk_yang_files` finds `*.yang` under the root URI — skipping
+   `target`/`.git`/`node_modules`/`.vscode`/`dist` — and each file gets a
+   `yrepo::Catalog::scan` (transient parse, header facts only, ~KB per file),
+   pushed into `Server.catalog` (`CatalogIndex`: name/revision/url + imports/
+   includes). **No full parse and no repository ingest** — this is what makes
+   a very large tree indexable in-process.
+2. **Open-closure sync** (`sync_open_closure`, on `didOpen`/`didChange`/
+   `didClose` and after the catalog build): the repository is reconciled to
+   contain exactly the open buffers (upserted full in `upsert_yang`) plus every
+   on-disk module reachable through the catalog from their headers — imports
+   and includes (submodules), honoring `revision-date` pins, plus the
+   `belongs-to` parent of an open submodule (`closure::header_seeds` +
+   `closure::closure_urls`). Reachable on-disk documents are parsed
+   **text-light**; documents that left the closure are dropped. The sync is
+   incremental: seeds come from already-parsed buffers, so a keystroke that
+   does not change the header costs only a catalog BFS + `contains` checks.
 3. **[DONE D5]** Imported modules *outside* the workspace (system YANG, `ietf-*`) are **ignored in v1**; their unresolved-import diagnostics are suppressed (configurable include dirs can come later).
+4. **Serving trade-off**: diagnostics and cross-file features are computed over
+   the open closure. Modules that exist on disk but are not reachable from any
+   open buffer (e.g. augments whose source module nobody imported) do not
+   appear — matching what an editor needs; the whole-tree scan it replaces is
+   gone by design.
 
-Because `compile()` is full-workspace and non-incremental, and it is CPU work on the request path, we cache its result:
+Because `compile()` is non-incremental and is CPU work on the request path, we cache its result:
 
 - `snapshot()` returns the cached `Snapshot` when its `generation` equals the current `Server.generation`; otherwise it recompiles (`repo.read().await.compile()`), stores the new `Arc<Library>` + diagnostics, and caches them. v1 accepts a full recompile per change batch (small module counts are typical when authoring) and runs it on the request path under the repo read-lock — no `spawn_blocking` needed because compile is read-only against the repo.
-- Every repo-affecting event (open/change/close/scan) bumps `generation`, so the next semantic request rebuilds the snapshot; pull-diagnostics reuse it and key their `result_id` on the generation (§7).
+- Every repo-affecting event (open/change/close, closure sync that adds/drops documents, catalog build) bumps `generation`, so the next semantic request rebuilds the snapshot; pull-diagnostics reuse it and key their `result_id` on the generation (§7).
 - The immutable `Arc<Library>` snapshot is shared cheaply across concurrent requests; each request resolves goto/hover/completion against it (never against a half-compiled state).
 
 ### 6.2 API mapping (from `yrepo` README/report)

@@ -1,9 +1,8 @@
 //! Server state + the `LanguageServer` implementation (thin dispatch).
 
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
 use std::sync::{
-    OnceLock,
+    Arc, OnceLock,
     atomic::{AtomicU64, Ordering},
 };
 use std::time::Instant;
@@ -29,7 +28,7 @@ use tower_lsp_server::{
         Uri, WorkspaceEdit,
     },
 };
-use yrepo::{Library, Statement, StatementKind};
+use yrepo::{CatalogIndex, Library, Statement, StatementKind};
 
 use crate::{
     client::{self, Diagnostics, Window, Workspace},
@@ -58,7 +57,15 @@ struct InsertTemplateArgs {
 
 pub(crate) struct Server {
     root_uri: OnceLock<Uri>,
+    /// Open-closure yrepo repository: open buffers (full parse) plus the
+    /// on-disk modules they can see (text-light parse) — see
+    /// `docs/serving-large-trees.md`. Kept small by [`Server::sync_open_closure`].
     repo: RwLock<yrepo::Repository>,
+    /// Header-only catalog of the whole on-disk workspace (`Catalog::scan`),
+    /// built once by `ensure_scanned`. None until a workspace root exists.
+    catalog: RwLock<Option<Arc<CatalogIndex>>>,
+    /// Urls of the currently open YANG buffers (the roots of the closure).
+    open_yang: RwLock<HashSet<String>>,
     docs: Cache<String, std::sync::Arc<Document>>,
     config: OnceLock<Config>,
     generation: AtomicU64,
@@ -72,6 +79,8 @@ impl Server {
         Self {
             root_uri: OnceLock::new(),
             repo: RwLock::new(yrepo::Repository::new()),
+            catalog: RwLock::new(None),
+            open_yang: RwLock::new(HashSet::new()),
             docs: Cache::new(u32::MAX as u64), // unbounded; the client controls open buffers
             config: OnceLock::new(),
             generation: AtomicU64::new(0),
@@ -114,24 +123,28 @@ impl Server {
             .await;
     }
 
-    /// Feed a YANG document into the repository and invalidate the snapshot.
+    /// Feed a YANG open buffer into the repository (full parse) and pull in
+    /// the on-disk modules it depends on, then invalidate the snapshot.
     async fn upsert_yang(&self, uri: &str, text: &str) {
-        self.repo.write().await.upsert(uri, text);
+        self.open_yang.write().await.insert(uri.to_owned());
+        {
+            let mut repo = self.repo.write().await;
+            // Open buffers always keep full views (text-light OFF).
+            repo.set_text_light(false);
+            repo.upsert(uri, text);
+        }
         self.bump();
+        self.sync_open_closure().await;
     }
 
-    /// Revert a closed YANG document to its on-disk text, or drop it when the
-    /// file is gone (a closed module keeps resolving for others' imports).
+    /// Drop a closed YANG buffer from the repository; the on-disk document is
+    /// re-materialized (text-light) by `sync_open_closure` when another open
+    /// buffer still needs it.
     async fn revert_yang(&self, uri: &str) {
-        let mut repo = self.repo.write().await;
-        match workspace::url_to_path(uri).and_then(|p| std::fs::read_to_string(p).ok()) {
-            Some(text) => repo.upsert(uri, text),
-            None => {
-                repo.remove(uri);
-            }
-        }
-        drop(repo);
+        self.open_yang.write().await.remove(uri);
+        self.repo.write().await.remove(uri);
         self.bump();
+        self.sync_open_closure().await;
     }
 
     /// Classify an open XML/JSON buffer against the compiled YANG library as a
@@ -427,13 +440,12 @@ impl Server {
         diagnostic::report(version.to_string(), items)
     }
 
-    /// Make sure the on-disk `.yang` workspace has been scanned **once** before
-    /// serving semantics. Runs the scan lazily: whoever needs it first starts
-    /// it (`initialized`, or an early `textDocument/diagnostic` pull that beats
-    /// it), and every other caller waits for the same single scan to finish.
-    /// This prevents a first-open diagnostic from being computed against a
-    /// half-scanned repository (which used to flash spurious "import not
-    /// open" / "augment target not found" errors until a refresh arrived).
+    /// Make sure the on-disk `.yang` workspace catalog has been built **once**
+    /// before serving semantics. Runs lazily: whoever needs it first starts it
+    /// (`initialized`, or an early `textDocument/diagnostic` pull that beats
+    /// it), and every other caller waits for the same single build to finish.
+    /// After the catalog exists, the repository is synced to the open closure
+    /// so a first-open diagnostic never runs against a half-populated repo.
     async fn ensure_scanned(&self) {
         if self.root_uri.get().is_none() {
             return;
@@ -445,10 +457,11 @@ impl Server {
         self.scan
             .get_or_init(|| async {
                 let start = Instant::now();
-                self.scan_workspace().await;
+                self.fill_catalog().await;
+                self.sync_open_closure().await;
                 let duration = start.elapsed();
                 Window::log(info!(format!(
-                    "workspace scan finished in {:.6}s",
+                    "workspace catalog ready in {:.6}s",
                     duration.as_secs_f64()
                 )))
                 .await;
@@ -456,9 +469,12 @@ impl Server {
             .await;
     }
 
-    /// Scan the workspace and upsert every on-disk `.yang` file that is not an
-    /// open (dirty) buffer.
-    async fn scan_workspace(&self) {
+    /// Build the header-only catalog of every on-disk `.yang` file
+    /// (`Catalog::scan`, transient parse, ~KB per file). No full parses, no
+    /// repository ingest: this is what lets a giant tree be indexed without
+    /// retaining per-file views. Documents are (re)parsed on demand when they
+    /// enter an open closure.
+    async fn fill_catalog(&self) {
         let Some(root) = self.root_uri.get() else {
             Window::log(warning!("scan skipped: no workspace root")).await;
             return;
@@ -467,35 +483,90 @@ impl Server {
             Window::log(warning!("scan skipped: cannot resolve root path")).await;
             return;
         };
-        // Feed the on-disk modules (minus any open buffer) as one batch of
-        // `(url, path)` pairs: yrepo reads *and* parses the files in parallel
-        // (feature `parallel`) and never buffers the whole workspace as text,
-        // so scan memory stays flat however many modules there are.
-        let mut batch: Vec<(String, PathBuf)> = Vec::new();
+        let mut index = CatalogIndex::default();
+        let mut named = 0usize;
         for path in workspace::walk_yang_files(&root_path) {
             let Some(url) = workspace::path_to_url(&path) else {
                 continue;
             };
-            // Canonical spelling so scan keys equal open-buffer keys even when
-            // the client URI and this walk disagree on encoding/case.
+            // Canonical spelling so catalog keys equal open-buffer keys even
+            // when the client URI and this walk disagree on encoding/case.
             let url = workspace::canon_url(&url);
-            // Skip files that have an open buffer (buffer text wins).
-            if self.docs.contains_key(&url) {
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let record = yrepo::Catalog::scan(url, text);
+            if !record.name.is_empty() {
+                named += 1;
+            }
+            index.push(record);
+        }
+        let total = index.len();
+        *self.catalog.write().await = Some(Arc::new(index));
+        Window::log(info!(format!(
+            "workspace catalog: {named} named modules over {total} yang files"
+        )))
+        .await;
+    }
+
+    /// Reconcile the repository with the OPEN CLOSURE: it must contain exactly
+    /// the open buffers (full parse — done by their `upsert_yang`) plus every
+    /// on-disk module they can reach through the catalog (imports, includes,
+    /// and the belongs-to parent of an open submodule), parsed text-light.
+    ///
+    /// The sync is incremental and cheap when nothing changed: header seeds are
+    /// re-read from the (already parsed) open buffers, the catalog closure is
+    /// recomputed, documents that left the closure are dropped and missing
+    /// ones are read from disk once. It must be called only from the did_open /
+    /// did_change / did_close / scan paths — never while a caller holds the
+    /// repository read lock.
+    async fn sync_open_closure(&self) {
+        let Some(catalog) = self.catalog.read().await.clone() else {
+            return; // no workspace catalog yet (no root, or scan not run)
+        };
+        let open: Vec<String> = self.open_yang.read().await.iter().cloned().collect();
+        let mut repo = self.repo.write().await;
+        // Seeds: the cross-file dependencies each open buffer declares.
+        let mut seeds: Vec<crate::closure::Seed> = Vec::new();
+        for url in &open {
+            if let Some(root) = repo.statement(url) {
+                seeds.extend(crate::closure::header_seeds(root));
+            }
+        }
+        let mut needed = crate::closure::closure_urls(&catalog, &seeds);
+        for url in &open {
+            needed.insert(url.clone());
+        }
+        let mut changed = false;
+        // Drop documents that are no longer reachable from any open buffer.
+        let urls: Vec<String> = repo.urls().into_iter().map(str::to_owned).collect();
+        for url in urls {
+            if !needed.contains(&url) {
+                repo.remove(&url);
+                changed = true;
+            }
+        }
+        // Materialize on-disk documents the open closure needs (text-light:
+        // their views only feed schema resolution, never open-buffer features).
+        repo.set_text_light(true);
+        for url in &needed {
+            if repo.contains(url) {
                 continue;
             }
-            batch.push((url, path));
+            if let Some(text) = Self::disk_text(url) {
+                repo.upsert(url.clone(), text);
+                changed = true;
+            }
         }
-        let scanned = if batch.is_empty() {
-            0
-        } else {
-            self.repo.write().await.upsert_many_files(batch)
-        };
-        self.bump();
-        Window::log(info!(format!("workspace scan loaded {scanned} yang files"))).await;
-        // Documents opened while the scan was still running may have stale
-        // pull-diagnostics; make the client re-pull now that the full module
-        // set is known.
-        Diagnostics::refresh().await;
+        repo.set_text_light(false);
+        if changed {
+            self.bump();
+        }
+    }
+
+    /// Read a canonical url's file text from disk (used for closure members).
+    fn disk_text(url: &str) -> Option<String> {
+        workspace::url_to_path(url).and_then(|p| std::fs::read_to_string(p).ok())
     }
 
     /// Compile the repository (cached by generation). Re-compiles only when a

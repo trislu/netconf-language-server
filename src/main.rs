@@ -4,6 +4,7 @@
 #![deny(clippy::print_stderr)]
 
 mod client;
+mod closure;
 mod completion;
 mod config;
 mod convert;

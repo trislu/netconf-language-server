@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Open-closure serving (catalog + closure)**: the workspace is indexed
+  header-only (`fill_catalog`, `yrepo::Catalog::scan` per file) and the
+  repository holds only the open buffers plus the on-disk modules they can
+  reach (`sync_open_closure`, new `src/closure.rs`: header seeds + catalog
+  closure with revision-date pins). Retention and compile cost scale with the
+  open view, not the tree size — see `docs/serving-large-trees.md`.
+  Open buffers keep full parse views; reachable on-disk modules parse
+  text-light.
+
 ## [0.2.0] - 2026-09-06
 
 ### Added

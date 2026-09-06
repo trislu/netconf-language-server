@@ -253,6 +253,21 @@ pub(crate) fn resolve(
                 origin_range: arg.range.clone(),
             }
         }
+        // A `uses-augment` (augment inside a uses) names a data node of the
+        // used grouping, like refine — same-file groupings.
+        K::UsesAugment => {
+            let target = refine_target_in_file(root, stmt, scope, lib)?;
+            let name_range = target
+                .arg
+                .as_ref()
+                .map(|a| a.range.clone())
+                .unwrap_or_else(|| target.range.clone());
+            Target {
+                url: url.to_string(),
+                target_range: name_range,
+                origin_range: arg.range.clone(),
+            }
+        }
         // A `refine` inside a `uses` names a data node of the used grouping;
         // jump to its definition in the grouping body (same-file groupings).
         K::Refine => {
@@ -542,6 +557,29 @@ mod tests {
         assert!(
             hit.contains("host"),
             "target text {hit:?} should name the leaf"
+        );
+    }
+
+    const UA: &str = "module ua {\n  namespace \"urn:ua\";\n  prefix ua;\n\
+      grouping g { container base { leaf id { type string; } } }\n\
+      container app { uses g { augment base { leaf extra { type string; } } } }\n\
+    }\n";
+
+    #[test]
+    fn goto_uses_augment_target_into_grouping() {
+        let mut repo = Repository::new();
+        repo.upsert("/ua.yang", UA.to_string());
+        let out = repo.compile();
+        let lib = out.library.expect("library");
+        let rope = Rope::from_str(UA);
+        let root = repo.statement("/ua.yang").expect("root");
+        let byte = UA.find("augment base").unwrap() + "augment ".len() + 1;
+        let t = resolve(&rope, root, "/ua.yang", byte, "ua", &lib).expect("uses-augment goto");
+        assert_eq!(t.len(), 1);
+        let hit = text_at(UA, t[0].target_range.clone());
+        assert!(
+            hit.contains("base"),
+            "target text {hit:?} should name the container"
         );
     }
 }

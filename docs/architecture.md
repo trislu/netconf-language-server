@@ -12,11 +12,12 @@
 
 A Rust language server for authoring **NETCONF/YANG** modules (`*.yang`) **and
 NETCONF instance documents** — XML message envelopes/payloads and RFC 7951 JSON
-— plus a **VS Code** extension. The YANG-only v0.1.0 behaviors are unchanged;
+— plus **VS Code** and **Zed** extensions. The YANG-only v0.1.0 behaviors are unchanged;
 instance features were shipped as milestones M0–M5 (see §12 and D18+ in §13).
 
 - Reference implementation skeleton & Design lessons: **`gemcap-language-server`** (MIT — mirror freely).
-- Semantic engine: **`yrepo`** (MIT crate, `0.1` on crates.io). Grammar: `tree-sitter-yang` (transitively pulled in by `yrepo`).
+- Semantic engine: **`yrepo`** (MIT crate, `0.3` on crates.io; used with its
+  `parallel` feature). Grammar: `tree-sitter-yang` (transitively pulled in by `yrepo`).
 
 Original LSP feature spec is preserved and re-mapped in §7–§8.
 
@@ -107,7 +108,7 @@ flowchart LR
 netconf-language-server/
 ├── Cargo.toml              # tower-lsp-server 0.23, moka 0.12 (future), ropey 1.6,
 │                           #   tokio, serde/serde_json, strum, regex,
-│                           #   tree-sitter 0.26 + xml/json, yrepo (path dep)
+│                           #   tree-sitter 0.26 + xml/json, yrepo 0.3 (registry, "parallel")
 ├── docs/architecture.md
 ├── src/
 │   ├── main.rs             # transport boilerplate; deny print!; module decls
@@ -140,6 +141,7 @@ netconf-language-server/
 │       ├── inspect.rs      # dev tool: yrepo diagnostic summary over a *.yang tree
 │       └── probe.rs        # dev tool: per-file diagnostic probe with source context
 ├── clients/vscode/         # VS Code extension (mirror gemcap; yang+xml+json selectors, template commands)
+├── clients/zed/            # Zed extension: same server, YANG/XML/JSON read + write
 ├── examples/               # *.yang + XML/JSON instance docs for manual testing
 └── testdata/highlight/     # vendored YANG corpus + baseline.json (highlight regression guard)
 ```
@@ -268,7 +270,14 @@ struct Snapshot {           // immutable compile result, cached by generation
 
 `yrepo` resolves imports/includes **only among documents you `upsert`**. Therefore goto/hover/diagnostics across files require that **every reachable `.yang` in the workspace is in the repository**, not just open buffers. Implemented in `workspace.rs` + `server.rs`:
 
-1. **Workspace scan** (`scan_workspace`): recursively finds `*.yang` under the root URI — skipping `target`/`.git`/`node_modules`/`.vscode`/`dist` — and upserts each file that is **not** an open (dirty) buffer, then bumps the generation and calls `Diagnostics::refresh`. It runs **exactly once**, lazily, guarded by `Server.scan` (`OnceCell`) via `ensure_scanned()`: the first caller (`initialized`, or an early `textDocument/diagnostic` pull) starts it and every other caller awaits the same scan. This prevents transient "import not open"/"augment target not found" errors computed against a half-scanned repo.
+1. **Workspace scan** (`scan_workspace`): `workspace::walk_yang_files` recursively
+   finds `*.yang` under the root URI — skipping `target`/`.git`/`node_modules`/
+   `.vscode`/`dist` — and every file that is **not** an open (dirty) buffer is
+   collected into a single `(url, path)` batch fed to
+   `Repository::upsert_many_files` in one call (yrepo's `parallel` feature reads
+   *and* parses the batch off-thread, one file in memory at a time; the call
+   returns how many it committed), then it bumps the generation and calls
+   `Diagnostics::refresh`. It runs **exactly once**, lazily, guarded by `Server.scan` (`OnceCell`) via `ensure_scanned()`: the first caller (`initialized`, or an early `textDocument/diagnostic` pull) starts it and every other caller awaits the same scan. This prevents transient "import not open"/"augment target not found" errors computed against a half-scanned repo.
 2. Open buffers are upserted on `didOpen`/`didChange` (full text) and re-upserted with fresh text; a doc that is both open and on disk prefers buffer content (the scan skips open docs). `didClose` re-upserts the on-disk text or removes the doc (§4).
 3. **[DONE D5]** Imported modules *outside* the workspace (system YANG, `ietf-*`) are **ignored in v1**; their unresolved-import diagnostics are suppressed (configurable include dirs can come later).
 
@@ -298,7 +307,7 @@ Because `compile()` is full-workspace and non-incremental, and it is CPU work on
 | `Library::type_candidates(module)` / `identity_candidates(module)` | completion for `type` / `base` args (`TypeCandidate{name, kind, module}`) |
 | `Typedef::base()` / `Identity::base()` | raw underlying `type` / `base` argument of a symbol |
 
-The `resolve_*` / `*_candidates` / `comments` APIs all come from `yrepo` 0.1; the `resolve_*` family needs a compiled `Library`, so the server always uses them behind the §6.1 compile snapshot.
+The `resolve_*` / `*_candidates` / `comments` APIs all come from `yrepo` 0.3 (on crates.io); the `resolve_*` family needs a compiled `Library`, so the server always uses them behind the §6.1 compile snapshot.
 
 Positions: `yrepo` speaks **byte offsets** keyed by the exact url passed to `upsert`; `row`/`col` in `token_at`/`statement_at` are 0-based with `col` in Unicode scalars, not UTF-16. All conversion to LSP `Range` happens in `netconf-language-server` (§8, `convert.rs`). `DiagnosticCode` and `StatementKind` are `#[non_exhaustive]` — exhaustive matches need a wildcard arm. `statement()`/`statement_at()` borrow the repository (read-lock) — extract what you need, then drop the guard.
 
@@ -621,13 +630,21 @@ Future keys: include dirs for out-of-workspace YANG, diagnostics toggles.
 Pull diagnostics require client support (`textDocument/diagnostic`) —
 vscode-languageclient 10 handles it; no manual `publishDiagnostics`.
 
+### Zed client (`clients/zed`)
+
+The same server also ships as a **Zed** extension (`clients/zed`, id `Netconf`,
+v0.0.1): it attaches the `netconf-language-server` binary to Zed's YANG / XML /
+JSON languages and exposes the same **read** (diagnostics & hover) and **write**
+(completion) features — see `clients/zed/README.md` (screenshots under
+`assets/images/netconf-zed-*.png`).
+
 ---
 
 ## 11. Cross-cutting concerns
 
 - **Positions**: `convert.rs` — `yrepo` byte ranges ↔ `lsp::Range` (UTF-16) via per-doc `Rope` (`byte_to_position`/`range_to_lsp`/`position_to_byte`/`utf16_len`). Careful: `row`/`col` in `token_at`/`statement_at` count Unicode scalars, not UTF-16; do not feed UTF-16 cols straight in. Multi-byte cursor positions clamp to the character start.
 - **`#[non_exhaustive]`** on `StatementKind`, `DiagnosticCode` → wildcard arms (`K::Unknown(_)` / `_`) in goto/hover/highlight/diagnostic.
-- **Non-goals v1**: `.yin`, network/`yangcatalog` fetch, *leafref / `instance-identifier` XPath resolution* (and leafref value *chasing*, D31 — scalar leaf *value* checks are in, M5), full deviation add/delete/replace semantics, incremental repo compile, multi-workspace-folder, Zed client. *(Type-chain & identity-derivation existence resolution and the leaf restriction facets now come from `yrepo`; `union` values are deliberately not checked, D31.)*
+- **Non-goals v1**: `.yin`, network/`yangcatalog` fetch, *leafref / `instance-identifier` XPath resolution* (and leafref value *chasing*, D31 — scalar leaf *value* checks are in, M5), full deviation add/delete/replace semantics, incremental repo compile, multi-workspace-folder. *(Type-chain & identity-derivation existence resolution and the leaf restriction facets now come from `yrepo`; `union` values are deliberately not checked, D31.)*
 - **Logging** discipline as gemcap (window/logMessage only via `client.rs`; `#![deny(clippy::print_stdout)]`/`print_stderr`). Errors surfaced as LSP errors, never panics on user content.
 - **Tests**: unit tests in `goto.rs`/`hover.rs` over a scripted `yrepo` repository, plus the `semantic_token.rs` suite — delta-decode helpers, multi-line token splitting, per-shape assertions (`highlight_known_shapes_are_covered`) and a **coverage regression guard** over the vendored `testdata/highlight` corpus (`highlight_coverage_matches_baseline` vs `baseline.json`: 7 files, 275 word tokens, 0 uncovered; re-bless with the ignored `bless_highlight_baseline`). Dev-only binaries `src/bin/inspect.rs`/`probe.rs` inspect `yrepo` diagnostics over a tree / single file. A full stdio JSON-RPC integration harness is still future work.
 
@@ -682,7 +699,7 @@ server. Status markers match the sections above.
 | # | Topic | Options | Status / lean |
 | --- | --- | --- | --- |
 | D1 | Text sync | FULL vs INCREMENTAL | ✅ **FULL v1** |
-| D2 | Syntax view source | (A) extend `yrepo` / (B) own tree-sitter / (C) targeted APIs | ✅ **DONE** (A) — consumed from `yrepo` 0.1 |
+| D2 | Syntax view source | (A) extend `yrepo` / (B) own tree-sitter / (C) targeted APIs | ✅ **DONE** (A) — consumed from `yrepo` 0.3 |
 | D3 | compile trigger/caching | lazy `spawn_blocking` + `Arc<Library>` snapshot | ✅ **done** — generation-keyed `snapshot()` cache (§6.1) |
 | D4 | Highlight arg classes (Q4) | atomic = 1 token over arg / composite = lex inside; per-`StatementKind` map | ✅ **DONE** (map in §8.3) |
 | D5 | Out-of-workspace imports | ignore v1 vs include dirs | ✅ ignore in v1 |

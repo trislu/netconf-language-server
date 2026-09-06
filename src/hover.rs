@@ -253,6 +253,37 @@ pub(crate) fn handle(
                 node.kind()
             ))
         }
+        // A `leafref` `path`: absolute paths describe the referenced node
+        // (predicates stripped); relative paths await the leafref engine.
+        K::Path => {
+            let path = arg.path();
+            if !path.starts_with('/') {
+                return None;
+            }
+            let lookup = match path.find('[') {
+                Some(i) => &path[..i],
+                None => &path,
+            };
+            let node = lib.resolve_abs_schema_node_id(scope, lookup)?;
+            Some(format!(
+                "leafref target **`{}`** (kind: {:?})",
+                node.name(),
+                node.kind()
+            ))
+        }
+        // A `deviation` target describes the affected node.
+        K::Deviation => {
+            let path = arg.path();
+            if !path.starts_with('/') {
+                return None;
+            }
+            let node = lib.resolve_abs_schema_node_id(scope, &path)?;
+            Some(format!(
+                "deviation target **`{}`** (kind: {:?})",
+                node.name(),
+                node.kind()
+            ))
+        }
         _ => None,
     }
 }
@@ -325,5 +356,46 @@ mod tests {
         let b = FEAT.find("default auto-id;").unwrap() + "default ".len();
         let t = handle(&rope, &root, b, "fmod", &lib).expect("identity default hover");
         assert!(t.contains("identity value **`auto-id`**"), "{t}");
+    }
+
+    const LRF: &str = "module lrbase {\n  namespace \"urn:lb\";\n  prefix b;\n\
+      container top { list item { key name; leaf name { type string; }\n\
+      leaf port { type uint16; } } }\n\
+    }\n";
+    const LR: &str = "module lr {\n  namespace \"urn:lr\";\n  prefix l;\n\
+      import lrbase { prefix b; }\n\
+      leaf ref { type leafref { path \"/b:top/b:item/b:port\"; } }\n\
+    }\n";
+    const DEV: &str = "module devbase {\n  namespace \"urn:db\";\n  prefix db;\n\
+      container c { leaf mtu { type uint32; } }\n\
+    }\n";
+    const DV: &str = "module dv {\n  namespace \"urn:dv\";\n  prefix dv;\n\
+      import devbase { prefix db; }\n\
+      deviation \"/db:c/db:mtu\" { deviate replace { type uint8; } }\n\
+    }\n";
+
+    #[test]
+    fn hover_leafref_path_and_deviation() {
+        let mut repo = Repository::new();
+        repo.upsert("/lrbase.yang", LRF.to_string());
+        repo.upsert("/lr.yang", LR.to_string());
+        let out = repo.compile();
+        let lib = out.library.expect("library");
+        let rope = Rope::from_str(LR);
+        let root = repo.statement("/lr.yang").expect("root").clone();
+        let b = LR.find("path \"/b:top/b:item/b:port\"").unwrap() + "path \"".len();
+        let t = handle(&rope, &root, b, "lr", &lib).expect("leafref hover");
+        assert!(t.contains("leafref target **`port`**"), "{t}");
+
+        let mut repo = Repository::new();
+        repo.upsert("/devbase.yang", DEV.to_string());
+        repo.upsert("/dv.yang", DV.to_string());
+        let out = repo.compile();
+        let lib = out.library.expect("library");
+        let rope = Rope::from_str(DV);
+        let root = repo.statement("/dv.yang").expect("root").clone();
+        let b = DV.find("deviation \"/db:c/db:mtu\"").unwrap() + "deviation \"".len();
+        let t = handle(&rope, &root, b, "dv", &lib).expect("deviation hover");
+        assert!(t.contains("deviation target **`mtu`**"), "{t}");
     }
 }

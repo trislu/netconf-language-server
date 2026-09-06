@@ -1,0 +1,314 @@
+<!doctype html><html><head><meta charset="utf-8"><title>YANG giant-scale serveperf report</title>
+<style>
+body{font-family: system-ui,sans-serif; margin:2rem auto; max-width:1020px; color:#222;}
+h1{font-size:1.3rem} h2{font-size:1.05rem; margin-top:2rem}
+svg{border:1px solid #ddd; border-radius:6px; background:#fff; margin:0.4rem 0}
+table{border-collapse:collapse; font-size:.8rem; margin:1rem 0; width:100%}
+td,th{border:1px solid #ccc; padding:3px 6px; text-align:right}
+th:first-child,td:first-child{text-align:left}
+.note{font-size:.85rem; color:#555; max-width:95ch}
+code{background:#f4f4f4; padding:0 3px}
+</style></head><body>
+<h1>YANG catalog + open-closure serving — giant-scale grid report</h1>
+<p class="note">Generated 2026-09-06 17:34 UTC from <code>results/raw.tsv</code> (85 runs: every 10k step of the
+tree, 10,000 → 165,521 files, 5 repetitions each). Tool: <code>examples/serveperf</code> (LTO release
+profile, 16-way parallel catalog scan via <code>CatalogIndex::scan_many_files</code>, then materialize +
+compile the open closure of the first 20 distinct module names, text-light ON). Generator:
+<code>make_report.py</code> (re-run to regenerate).</p>
+<svg width="880" height="300" viewBox="0 0 880 300"><rect width="880" height="300" fill="#fff"/>
+<line x1="64.0" y1="266.0" x2="64.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="64.0" y="281.0" font-size="11" text-anchor="middle" fill="#555">0k</text>
+<line x1="164.2" y1="266.0" x2="164.2" y2="26.0" stroke="#f0f0f0"/>
+<text x="164.2" y="281.0" font-size="11" text-anchor="middle" fill="#555">20k</text>
+<line x1="264.5" y1="266.0" x2="264.5" y2="26.0" stroke="#f0f0f0"/>
+<text x="264.5" y="281.0" font-size="11" text-anchor="middle" fill="#555">40k</text>
+<line x1="364.8" y1="266.0" x2="364.8" y2="26.0" stroke="#f0f0f0"/>
+<text x="364.8" y="281.0" font-size="11" text-anchor="middle" fill="#555">60k</text>
+<line x1="465.0" y1="266.0" x2="465.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="465.0" y="281.0" font-size="11" text-anchor="middle" fill="#555">80k</text>
+<line x1="565.2" y1="266.0" x2="565.2" y2="26.0" stroke="#f0f0f0"/>
+<text x="565.2" y="281.0" font-size="11" text-anchor="middle" fill="#555">100k</text>
+<line x1="665.5" y1="266.0" x2="665.5" y2="26.0" stroke="#f0f0f0"/>
+<text x="665.5" y="281.0" font-size="11" text-anchor="middle" fill="#555">120k</text>
+<line x1="765.8" y1="266.0" x2="765.8" y2="26.0" stroke="#f0f0f0"/>
+<text x="765.8" y="281.0" font-size="11" text-anchor="middle" fill="#555">140k</text>
+<line x1="866.0" y1="266.0" x2="866.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="866.0" y="281.0" font-size="11" text-anchor="middle" fill="#555">160k</text>
+<line x1="64.0" y1="266.0" x2="866.0" y2="266.0" stroke="#f0f0f0"/>
+<text x="58.0" y="270.0" font-size="11" text-anchor="end" fill="#555">0</text>
+<line x1="64.0" y1="226.0" x2="866.0" y2="226.0" stroke="#f0f0f0"/>
+<text x="58.0" y="230.0" font-size="11" text-anchor="end" fill="#555">10</text>
+<line x1="64.0" y1="186.0" x2="866.0" y2="186.0" stroke="#f0f0f0"/>
+<text x="58.0" y="190.0" font-size="11" text-anchor="end" fill="#555">20</text>
+<line x1="64.0" y1="146.0" x2="866.0" y2="146.0" stroke="#f0f0f0"/>
+<text x="58.0" y="150.0" font-size="11" text-anchor="end" fill="#555">30</text>
+<line x1="64.0" y1="106.0" x2="866.0" y2="106.0" stroke="#f0f0f0"/>
+<text x="58.0" y="110.0" font-size="11" text-anchor="end" fill="#555">40</text>
+<line x1="64.0" y1="66.0" x2="866.0" y2="66.0" stroke="#f0f0f0"/>
+<text x="58.0" y="70.0" font-size="11" text-anchor="end" fill="#555">50</text>
+<line x1="64.0" y1="26.0" x2="866.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="58.0" y="30.0" font-size="11" text-anchor="end" fill="#555">60</text>
+<polygon points="114.1,250.6 164.2,241.6 214.4,235.6 264.5,229.0 314.6,223.2 364.8,217.4 414.9,212.8 465.0,207.6 515.1,202.5 565.2,198.0 615.4,194.2 665.5,189.5 715.6,181.5 765.8,178.6 815.9,173.2 866.0,168.2 893.7,164.9 893.7,169.2 866.0,171.1 815.9,176.2 765.8,180.6 715.6,186.4 665.5,191.6 615.4,196.6 565.2,201.2 515.1,205.1 465.0,209.8 414.9,215.4 364.8,220.4 314.6,225.6 264.5,231.5 214.4,237.9 164.2,243.8 114.1,251.7" fill="#cfe4f2"/>
+<polyline points="114.1,251.5 164.2,241.9 214.4,236.2 264.5,229.6 314.6,224.0 364.8,218.8 414.9,213.2 465.0,208.1 515.1,204.6 565.2,199.5 615.4,195.3 665.5,190.9 715.6,185.1 765.8,180.3 815.9,174.2 866.0,169.8 893.7,167.4" fill="none" stroke="#2b7fba" stroke-width="2.2"/>
+<circle cx="114.1" cy="251.5" r="3" fill="#2b7fba"/>
+<circle cx="164.2" cy="241.9" r="3" fill="#2b7fba"/>
+<circle cx="214.4" cy="236.2" r="3" fill="#2b7fba"/>
+<circle cx="264.5" cy="229.6" r="3" fill="#2b7fba"/>
+<circle cx="314.6" cy="224.0" r="3" fill="#2b7fba"/>
+<circle cx="364.8" cy="218.8" r="3" fill="#2b7fba"/>
+<circle cx="414.9" cy="213.2" r="3" fill="#2b7fba"/>
+<circle cx="465.0" cy="208.1" r="3" fill="#2b7fba"/>
+<circle cx="515.1" cy="204.6" r="3" fill="#2b7fba"/>
+<circle cx="565.2" cy="199.5" r="3" fill="#2b7fba"/>
+<circle cx="615.4" cy="195.3" r="3" fill="#2b7fba"/>
+<circle cx="665.5" cy="190.9" r="3" fill="#2b7fba"/>
+<circle cx="715.6" cy="185.1" r="3" fill="#2b7fba"/>
+<circle cx="765.8" cy="180.3" r="3" fill="#2b7fba"/>
+<circle cx="815.9" cy="174.2" r="3" fill="#2b7fba"/>
+<circle cx="866.0" cy="169.8" r="3" fill="#2b7fba"/>
+<circle cx="893.7" cy="167.4" r="3" fill="#2b7fba"/>
+<rect x="700" y="12" width="12" height="12" fill="#2b7fba"/><text x="716" y="22" font-size="11" fill="#222">median (5 reps)</text>
+<rect x="836" y="12" width="12" height="12" fill="#cfe4f2"/><text x="700" y="12" fill="none"></text>
+<text x="720" y="34" font-size="11" fill="#666">band = min–max</text>
+<text x="465.0" y="298.0" font-size="12" text-anchor="middle" fill="#222">files in the catalog (10k grid to full 165,521)</text>
+<text x="12" y="146.0" font-size="12" text-anchor="middle" fill="#222" transform="rotate(-90 12 146.0)">catalog wall (s)</text>
+<text x="64" y="14" font-size="12" fill="#222" font-weight="600">1 · Catalog scan wall time — median of 5 with min–max band</text>
+</svg>
+<svg width="880" height="300" viewBox="0 0 880 300"><rect width="880" height="300" fill="#fff"/>
+<line x1="64.0" y1="266.0" x2="64.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="64.0" y="281.0" font-size="11" text-anchor="middle" fill="#555">0k</text>
+<line x1="164.2" y1="266.0" x2="164.2" y2="26.0" stroke="#f0f0f0"/>
+<text x="164.2" y="281.0" font-size="11" text-anchor="middle" fill="#555">20k</text>
+<line x1="264.5" y1="266.0" x2="264.5" y2="26.0" stroke="#f0f0f0"/>
+<text x="264.5" y="281.0" font-size="11" text-anchor="middle" fill="#555">40k</text>
+<line x1="364.8" y1="266.0" x2="364.8" y2="26.0" stroke="#f0f0f0"/>
+<text x="364.8" y="281.0" font-size="11" text-anchor="middle" fill="#555">60k</text>
+<line x1="465.0" y1="266.0" x2="465.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="465.0" y="281.0" font-size="11" text-anchor="middle" fill="#555">80k</text>
+<line x1="565.2" y1="266.0" x2="565.2" y2="26.0" stroke="#f0f0f0"/>
+<text x="565.2" y="281.0" font-size="11" text-anchor="middle" fill="#555">100k</text>
+<line x1="665.5" y1="266.0" x2="665.5" y2="26.0" stroke="#f0f0f0"/>
+<text x="665.5" y="281.0" font-size="11" text-anchor="middle" fill="#555">120k</text>
+<line x1="765.8" y1="266.0" x2="765.8" y2="26.0" stroke="#f0f0f0"/>
+<text x="765.8" y="281.0" font-size="11" text-anchor="middle" fill="#555">140k</text>
+<line x1="866.0" y1="266.0" x2="866.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="866.0" y="281.0" font-size="11" text-anchor="middle" fill="#555">160k</text>
+<line x1="64.0" y1="266.0" x2="866.0" y2="266.0" stroke="#f0f0f0"/>
+<text x="58.0" y="270.0" font-size="11" text-anchor="end" fill="#555">0</text>
+<line x1="64.0" y1="206.0" x2="866.0" y2="206.0" stroke="#f0f0f0"/>
+<text x="58.0" y="210.0" font-size="11" text-anchor="end" fill="#555">5000</text>
+<line x1="64.0" y1="146.0" x2="866.0" y2="146.0" stroke="#f0f0f0"/>
+<text x="58.0" y="150.0" font-size="11" text-anchor="end" fill="#555">10000</text>
+<line x1="64.0" y1="86.0" x2="866.0" y2="86.0" stroke="#f0f0f0"/>
+<text x="58.0" y="90.0" font-size="11" text-anchor="end" fill="#555">15000</text>
+<line x1="64.0" y1="26.0" x2="866.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="58.0" y="30.0" font-size="11" text-anchor="end" fill="#555">20000</text>
+<text x="465.0" y="298.0" font-size="12" text-anchor="middle" fill="#222">files in the catalog</text>
+<text x="12" y="146.0" font-size="12" text-anchor="middle" fill="#222" transform="rotate(-90 12 146.0)">throughput (files/s)</text>
+<text x="64" y="14" font-size="12" fill="#222" font-weight="600">2 · Catalog throughput (files/s, median of 5)</text>
+<polyline points="114.1,233.4 164.2,225.2 214.4,217.4 264.5,212.8 314.6,208.7 364.8,205.1 414.9,201.5 465.0,199.4 515.1,196.1 565.2,193.8 615.4,191.3 665.5,189.6 715.6,189.4 765.8,187.9 815.9,187.1 866.0,186.1 893.7,185.7" fill="none" stroke="#3a9e5f" stroke-width="2"/>
+<circle cx="114.1" cy="233.4" r="2.6" fill="#3a9e5f"/>
+<circle cx="164.2" cy="225.2" r="2.6" fill="#3a9e5f"/>
+<circle cx="214.4" cy="217.4" r="2.6" fill="#3a9e5f"/>
+<circle cx="264.5" cy="212.8" r="2.6" fill="#3a9e5f"/>
+<circle cx="314.6" cy="208.7" r="2.6" fill="#3a9e5f"/>
+<circle cx="364.8" cy="205.1" r="2.6" fill="#3a9e5f"/>
+<circle cx="414.9" cy="201.5" r="2.6" fill="#3a9e5f"/>
+<circle cx="465.0" cy="199.4" r="2.6" fill="#3a9e5f"/>
+<circle cx="515.1" cy="196.1" r="2.6" fill="#3a9e5f"/>
+<circle cx="565.2" cy="193.8" r="2.6" fill="#3a9e5f"/>
+<circle cx="615.4" cy="191.3" r="2.6" fill="#3a9e5f"/>
+<circle cx="665.5" cy="189.6" r="2.6" fill="#3a9e5f"/>
+<circle cx="715.6" cy="189.4" r="2.6" fill="#3a9e5f"/>
+<circle cx="765.8" cy="187.9" r="2.6" fill="#3a9e5f"/>
+<circle cx="815.9" cy="187.1" r="2.6" fill="#3a9e5f"/>
+<circle cx="866.0" cy="186.1" r="2.6" fill="#3a9e5f"/>
+<circle cx="893.7" cy="185.7" r="2.6" fill="#3a9e5f"/>
+<rect x="214" y="12" width="12" height="12" fill="#3a9e5f"/>
+<text x="230" y="22" font-size="11" fill="#222">files/s</text>
+</svg>
+<svg width="880" height="300" viewBox="0 0 880 300"><rect width="880" height="300" fill="#fff"/>
+<line x1="64.0" y1="266.0" x2="64.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="64.0" y="281.0" font-size="11" text-anchor="middle" fill="#555">0k</text>
+<line x1="164.2" y1="266.0" x2="164.2" y2="26.0" stroke="#f0f0f0"/>
+<text x="164.2" y="281.0" font-size="11" text-anchor="middle" fill="#555">20k</text>
+<line x1="264.5" y1="266.0" x2="264.5" y2="26.0" stroke="#f0f0f0"/>
+<text x="264.5" y="281.0" font-size="11" text-anchor="middle" fill="#555">40k</text>
+<line x1="364.8" y1="266.0" x2="364.8" y2="26.0" stroke="#f0f0f0"/>
+<text x="364.8" y="281.0" font-size="11" text-anchor="middle" fill="#555">60k</text>
+<line x1="465.0" y1="266.0" x2="465.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="465.0" y="281.0" font-size="11" text-anchor="middle" fill="#555">80k</text>
+<line x1="565.2" y1="266.0" x2="565.2" y2="26.0" stroke="#f0f0f0"/>
+<text x="565.2" y="281.0" font-size="11" text-anchor="middle" fill="#555">100k</text>
+<line x1="665.5" y1="266.0" x2="665.5" y2="26.0" stroke="#f0f0f0"/>
+<text x="665.5" y="281.0" font-size="11" text-anchor="middle" fill="#555">120k</text>
+<line x1="765.8" y1="266.0" x2="765.8" y2="26.0" stroke="#f0f0f0"/>
+<text x="765.8" y="281.0" font-size="11" text-anchor="middle" fill="#555">140k</text>
+<line x1="866.0" y1="266.0" x2="866.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="866.0" y="281.0" font-size="11" text-anchor="middle" fill="#555">160k</text>
+<line x1="64.0" y1="266.0" x2="866.0" y2="266.0" stroke="#f0f0f0"/>
+<text x="58.0" y="270.0" font-size="11" text-anchor="end" fill="#555">0</text>
+<line x1="64.0" y1="226.0" x2="866.0" y2="226.0" stroke="#f0f0f0"/>
+<text x="58.0" y="230.0" font-size="11" text-anchor="end" fill="#555">500</text>
+<line x1="64.0" y1="186.0" x2="866.0" y2="186.0" stroke="#f0f0f0"/>
+<text x="58.0" y="190.0" font-size="11" text-anchor="end" fill="#555">1000</text>
+<line x1="64.0" y1="146.0" x2="866.0" y2="146.0" stroke="#f0f0f0"/>
+<text x="58.0" y="150.0" font-size="11" text-anchor="end" fill="#555">1500</text>
+<line x1="64.0" y1="106.0" x2="866.0" y2="106.0" stroke="#f0f0f0"/>
+<text x="58.0" y="110.0" font-size="11" text-anchor="end" fill="#555">2000</text>
+<line x1="64.0" y1="66.0" x2="866.0" y2="66.0" stroke="#f0f0f0"/>
+<text x="58.0" y="70.0" font-size="11" text-anchor="end" fill="#555">2500</text>
+<line x1="64.0" y1="26.0" x2="866.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="58.0" y="30.0" font-size="11" text-anchor="end" fill="#555">3000</text>
+<text x="465.0" y="298.0" font-size="12" text-anchor="middle" fill="#222">files in the catalog</text>
+<text x="12" y="146.0" font-size="12" text-anchor="middle" fill="#222" transform="rotate(-90 12 146.0)">reported peak (MB)</text>
+<text x="64" y="14" font-size="12" fill="#222" font-weight="600">3 · Parallel-scan reported RSS/peak (max of 5) — transient parse high-water</text>
+<rect x="102.3" y="63.5" width="23.6" height="202.5" fill="#c0504d" opacity="0.85"/>
+<rect x="152.5" y="66.7" width="23.6" height="199.3" fill="#c0504d" opacity="0.85"/>
+<rect x="202.6" y="74.2" width="23.6" height="191.8" fill="#c0504d" opacity="0.85"/>
+<rect x="252.7" y="81.6" width="23.6" height="184.4" fill="#c0504d" opacity="0.85"/>
+<rect x="302.8" y="76.7" width="23.6" height="189.3" fill="#c0504d" opacity="0.85"/>
+<rect x="353.0" y="93.6" width="23.6" height="172.4" fill="#c0504d" opacity="0.85"/>
+<rect x="403.1" y="90.2" width="23.6" height="175.8" fill="#c0504d" opacity="0.85"/>
+<rect x="453.2" y="84.7" width="23.6" height="181.3" fill="#c0504d" opacity="0.85"/>
+<rect x="503.3" y="90.8" width="23.6" height="175.2" fill="#c0504d" opacity="0.85"/>
+<rect x="553.5" y="97.2" width="23.6" height="168.8" fill="#c0504d" opacity="0.85"/>
+<rect x="603.6" y="102.1" width="23.6" height="163.9" fill="#c0504d" opacity="0.85"/>
+<rect x="653.7" y="99.5" width="23.6" height="166.5" fill="#c0504d" opacity="0.85"/>
+<rect x="703.8" y="70.5" width="23.6" height="195.5" fill="#c0504d" opacity="0.85"/>
+<rect x="754.0" y="101.2" width="23.6" height="164.8" fill="#c0504d" opacity="0.85"/>
+<rect x="804.1" y="75.6" width="23.6" height="190.4" fill="#c0504d" opacity="0.85"/>
+<rect x="854.2" y="99.7" width="23.6" height="166.3" fill="#c0504d" opacity="0.85"/>
+<rect x="881.9" y="105.1" width="23.6" height="160.9" fill="#c0504d" opacity="0.85"/>
+<rect x="214" y="12" width="12" height="12" fill="#c0504d"/>
+<text x="230" y="22" font-size="11" fill="#222">peak RSS (MB)</text>
+</svg>
+<svg width="880" height="300" viewBox="0 0 880 300"><rect width="880" height="300" fill="#fff"/>
+<line x1="64.0" y1="266.0" x2="64.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="64.0" y="281.0" font-size="11" text-anchor="middle" fill="#555">0k</text>
+<line x1="164.2" y1="266.0" x2="164.2" y2="26.0" stroke="#f0f0f0"/>
+<text x="164.2" y="281.0" font-size="11" text-anchor="middle" fill="#555">20k</text>
+<line x1="264.5" y1="266.0" x2="264.5" y2="26.0" stroke="#f0f0f0"/>
+<text x="264.5" y="281.0" font-size="11" text-anchor="middle" fill="#555">40k</text>
+<line x1="364.8" y1="266.0" x2="364.8" y2="26.0" stroke="#f0f0f0"/>
+<text x="364.8" y="281.0" font-size="11" text-anchor="middle" fill="#555">60k</text>
+<line x1="465.0" y1="266.0" x2="465.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="465.0" y="281.0" font-size="11" text-anchor="middle" fill="#555">80k</text>
+<line x1="565.2" y1="266.0" x2="565.2" y2="26.0" stroke="#f0f0f0"/>
+<text x="565.2" y="281.0" font-size="11" text-anchor="middle" fill="#555">100k</text>
+<line x1="665.5" y1="266.0" x2="665.5" y2="26.0" stroke="#f0f0f0"/>
+<text x="665.5" y="281.0" font-size="11" text-anchor="middle" fill="#555">120k</text>
+<line x1="765.8" y1="266.0" x2="765.8" y2="26.0" stroke="#f0f0f0"/>
+<text x="765.8" y="281.0" font-size="11" text-anchor="middle" fill="#555">140k</text>
+<line x1="866.0" y1="266.0" x2="866.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="866.0" y="281.0" font-size="11" text-anchor="middle" fill="#555">160k</text>
+<line x1="64.0" y1="266.0" x2="866.0" y2="266.0" stroke="#f0f0f0"/>
+<text x="58.0" y="270.0" font-size="11" text-anchor="end" fill="#555">0</text>
+<line x1="64.0" y1="218.0" x2="866.0" y2="218.0" stroke="#f0f0f0"/>
+<text x="58.0" y="222.0" font-size="11" text-anchor="end" fill="#555">1</text>
+<line x1="64.0" y1="170.0" x2="866.0" y2="170.0" stroke="#f0f0f0"/>
+<text x="58.0" y="174.0" font-size="11" text-anchor="end" fill="#555">2</text>
+<line x1="64.0" y1="122.0" x2="866.0" y2="122.0" stroke="#f0f0f0"/>
+<text x="58.0" y="126.0" font-size="11" text-anchor="end" fill="#555">3</text>
+<line x1="64.0" y1="74.0" x2="866.0" y2="74.0" stroke="#f0f0f0"/>
+<text x="58.0" y="78.0" font-size="11" text-anchor="end" fill="#555">4</text>
+<line x1="64.0" y1="26.0" x2="866.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="58.0" y="30.0" font-size="11" text-anchor="end" fill="#555">5</text>
+<text x="465.0" y="298.0" font-size="12" text-anchor="middle" fill="#222">files in the catalog</text>
+<text x="12" y="146.0" font-size="12" text-anchor="middle" fill="#222" transform="rotate(-90 12 146.0)">closure compile (s)</text>
+<text x="64" y="14" font-size="12" fill="#222" font-weight="600">4 · Open-closure compile time vs tree size (median of 5)</text>
+<polyline points="114.1,117.7 164.2,263.6 214.4,264.1 264.5,263.6 314.6,264.1 364.8,263.6 414.9,264.1 465.0,264.1 515.1,263.6 565.2,263.6 615.4,263.6 665.5,263.6 715.6,264.1 765.8,264.1 815.9,263.6 866.0,263.6 893.7,263.6" fill="none" stroke="#7a4fb0" stroke-width="2"/>
+<circle cx="114.1" cy="117.7" r="2.6" fill="#7a4fb0"/>
+<circle cx="164.2" cy="263.6" r="2.6" fill="#7a4fb0"/>
+<circle cx="214.4" cy="264.1" r="2.6" fill="#7a4fb0"/>
+<circle cx="264.5" cy="263.6" r="2.6" fill="#7a4fb0"/>
+<circle cx="314.6" cy="264.1" r="2.6" fill="#7a4fb0"/>
+<circle cx="364.8" cy="263.6" r="2.6" fill="#7a4fb0"/>
+<circle cx="414.9" cy="264.1" r="2.6" fill="#7a4fb0"/>
+<circle cx="465.0" cy="264.1" r="2.6" fill="#7a4fb0"/>
+<circle cx="515.1" cy="263.6" r="2.6" fill="#7a4fb0"/>
+<circle cx="565.2" cy="263.6" r="2.6" fill="#7a4fb0"/>
+<circle cx="615.4" cy="263.6" r="2.6" fill="#7a4fb0"/>
+<circle cx="665.5" cy="263.6" r="2.6" fill="#7a4fb0"/>
+<circle cx="715.6" cy="264.1" r="2.6" fill="#7a4fb0"/>
+<circle cx="765.8" cy="264.1" r="2.6" fill="#7a4fb0"/>
+<circle cx="815.9" cy="263.6" r="2.6" fill="#7a4fb0"/>
+<circle cx="866.0" cy="263.6" r="2.6" fill="#7a4fb0"/>
+<circle cx="893.7" cy="263.6" r="2.6" fill="#7a4fb0"/>
+<rect x="214" y="12" width="12" height="12" fill="#7a4fb0"/>
+<text x="230" y="22" font-size="11" fill="#222">closure compile (s)</text>
+</svg>
+<svg width="880" height="300" viewBox="0 0 880 300"><rect width="880" height="300" fill="#fff"/>
+<line x1="64.0" y1="266.0" x2="64.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="64.0" y="281.0" font-size="11" text-anchor="middle" fill="#555">0k</text>
+<line x1="164.2" y1="266.0" x2="164.2" y2="26.0" stroke="#f0f0f0"/>
+<text x="164.2" y="281.0" font-size="11" text-anchor="middle" fill="#555">20k</text>
+<line x1="264.5" y1="266.0" x2="264.5" y2="26.0" stroke="#f0f0f0"/>
+<text x="264.5" y="281.0" font-size="11" text-anchor="middle" fill="#555">40k</text>
+<line x1="364.8" y1="266.0" x2="364.8" y2="26.0" stroke="#f0f0f0"/>
+<text x="364.8" y="281.0" font-size="11" text-anchor="middle" fill="#555">60k</text>
+<line x1="465.0" y1="266.0" x2="465.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="465.0" y="281.0" font-size="11" text-anchor="middle" fill="#555">80k</text>
+<line x1="565.2" y1="266.0" x2="565.2" y2="26.0" stroke="#f0f0f0"/>
+<text x="565.2" y="281.0" font-size="11" text-anchor="middle" fill="#555">100k</text>
+<line x1="665.5" y1="266.0" x2="665.5" y2="26.0" stroke="#f0f0f0"/>
+<text x="665.5" y="281.0" font-size="11" text-anchor="middle" fill="#555">120k</text>
+<line x1="765.8" y1="266.0" x2="765.8" y2="26.0" stroke="#f0f0f0"/>
+<text x="765.8" y="281.0" font-size="11" text-anchor="middle" fill="#555">140k</text>
+<line x1="866.0" y1="266.0" x2="866.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="866.0" y="281.0" font-size="11" text-anchor="middle" fill="#555">160k</text>
+<line x1="64.0" y1="266.0" x2="866.0" y2="266.0" stroke="#f0f0f0"/>
+<text x="58.0" y="270.0" font-size="11" text-anchor="end" fill="#555">0</text>
+<line x1="64.0" y1="206.0" x2="866.0" y2="206.0" stroke="#f0f0f0"/>
+<text x="58.0" y="210.0" font-size="11" text-anchor="end" fill="#555">20</text>
+<line x1="64.0" y1="146.0" x2="866.0" y2="146.0" stroke="#f0f0f0"/>
+<text x="58.0" y="150.0" font-size="11" text-anchor="end" fill="#555">40</text>
+<line x1="64.0" y1="86.0" x2="866.0" y2="86.0" stroke="#f0f0f0"/>
+<text x="58.0" y="90.0" font-size="11" text-anchor="end" fill="#555">60</text>
+<line x1="64.0" y1="26.0" x2="866.0" y2="26.0" stroke="#f0f0f0"/>
+<text x="58.0" y="30.0" font-size="11" text-anchor="end" fill="#555">80</text>
+<text x="465.0" y="298.0" font-size="12" text-anchor="middle" fill="#222">files in the catalog</text>
+<text x="12" y="146.0" font-size="12" text-anchor="middle" fill="#222" transform="rotate(-90 12 146.0)">modules in closure</text>
+<text x="64" y="14" font-size="12" fill="#222" font-weight="600">5 · Closure size (modules compiled for the 20 picked roots, median)</text>
+<polyline points="114.1,194.0 164.2,173.0 214.4,173.0 264.5,173.0 314.6,173.0 364.8,173.0 414.9,173.0 465.0,173.0 515.1,173.0 565.2,173.0 615.4,173.0 665.5,173.0 715.6,173.0 765.8,173.0 815.9,173.0 866.0,173.0 893.7,173.0" fill="none" stroke="#e09a2c" stroke-width="2"/>
+<circle cx="114.1" cy="194.0" r="2.6" fill="#e09a2c"/>
+<circle cx="164.2" cy="173.0" r="2.6" fill="#e09a2c"/>
+<circle cx="214.4" cy="173.0" r="2.6" fill="#e09a2c"/>
+<circle cx="264.5" cy="173.0" r="2.6" fill="#e09a2c"/>
+<circle cx="314.6" cy="173.0" r="2.6" fill="#e09a2c"/>
+<circle cx="364.8" cy="173.0" r="2.6" fill="#e09a2c"/>
+<circle cx="414.9" cy="173.0" r="2.6" fill="#e09a2c"/>
+<circle cx="465.0" cy="173.0" r="2.6" fill="#e09a2c"/>
+<circle cx="515.1" cy="173.0" r="2.6" fill="#e09a2c"/>
+<circle cx="565.2" cy="173.0" r="2.6" fill="#e09a2c"/>
+<circle cx="615.4" cy="173.0" r="2.6" fill="#e09a2c"/>
+<circle cx="665.5" cy="173.0" r="2.6" fill="#e09a2c"/>
+<circle cx="715.6" cy="173.0" r="2.6" fill="#e09a2c"/>
+<circle cx="765.8" cy="173.0" r="2.6" fill="#e09a2c"/>
+<circle cx="815.9" cy="173.0" r="2.6" fill="#e09a2c"/>
+<circle cx="866.0" cy="173.0" r="2.6" fill="#e09a2c"/>
+<circle cx="893.7" cy="173.0" r="2.6" fill="#e09a2c"/>
+<rect x="214" y="12" width="12" height="12" fill="#e09a2c"/>
+<text x="230" y="22" font-size="11" fill="#222">modules</text>
+</svg>
+<p class="note"><b>Chart 3 caveat:</b> the parallel scan's reported RSS/peak is dominated by the 16-way
+transient parse high-water (allocator keeps freed CST arenas) — it is <i>not</i> the retained catalog
+footprint (~230 MB sequential, chart 1 of the earlier <a href="../../charts/serving-scale.html">charts</a>).
+The resident language server scans sequentially and stays at ~255 MB on the full tree
+(sequential retained catalog ~230 MB; see yrepo docs/memory-findings.md).</p>
+<h2>Summary (per interval, over 5 reps)</h2>
+<table>
+<tr><th>files</th><th>reps</th><th>cat mean (s)</th><th>cat median (s)</th><th>cat min–max (s)</th><th>files/s</th>
+<th>RSS mean (MB)*</th><th>peak max (MB)*</th><th>closure mean (s)</th><th>closure max (s)</th><th>modules (med)</th><th>diags seen</th></tr>
+<tr><td>10,000</td><td>5</td><td>3.69</td><td>3.62</td><td>3.58–3.86</td><td>2713</td><td>2501</td><td>2531</td><td>3.054</td><td>3.150</td><td>24</td><td>3</td></tr><tr><td>20,000</td><td>5</td><td>5.89</td><td>6.03</td><td>5.55–6.11</td><td>3398</td><td>2428</td><td>2492</td><td>0.046</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>30,000</td><td>5</td><td>7.41</td><td>7.46</td><td>7.02–7.59</td><td>4046</td><td>2315</td><td>2397</td><td>0.040</td><td>0.040</td><td>31</td><td>107</td></tr><tr><td>40,000</td><td>5</td><td>9.03</td><td>9.10</td><td>8.62–9.25</td><td>4430</td><td>2228</td><td>2304</td><td>0.046</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>50,000</td><td>5</td><td>10.46</td><td>10.50</td><td>10.11–10.70</td><td>4778</td><td>2238</td><td>2367</td><td>0.042</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>60,000</td><td>5</td><td>11.82</td><td>11.81</td><td>11.39–12.14</td><td>5075</td><td>2058</td><td>2154</td><td>0.048</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>70,000</td><td>5</td><td>13.01</td><td>13.19</td><td>12.65–13.30</td><td>5379</td><td>2015</td><td>2198</td><td>0.044</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>80,000</td><td>5</td><td>14.42</td><td>14.47</td><td>14.05–14.59</td><td>5549</td><td>2081</td><td>2266</td><td>0.044</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>90,000</td><td>5</td><td>15.45</td><td>15.36</td><td>15.23–15.88</td><td>5827</td><td>2089</td><td>2190</td><td>0.046</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>100,000</td><td>5</td><td>16.63</td><td>16.62</td><td>16.21–17.00</td><td>6014</td><td>1905</td><td>2110</td><td>0.048</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>110,000</td><td>5</td><td>17.66</td><td>17.67</td><td>17.36–17.94</td><td>6228</td><td>1853</td><td>2049</td><td>0.048</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>120,000</td><td>5</td><td>18.86</td><td>18.77</td><td>18.60–19.13</td><td>6363</td><td>1971</td><td>2081</td><td>0.046</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>130,000</td><td>5</td><td>20.38</td><td>20.22</td><td>19.90–21.12</td><td>6379</td><td>2052</td><td>2443</td><td>0.044</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>140,000</td><td>5</td><td>21.52</td><td>21.43</td><td>21.34–21.86</td><td>6504</td><td>1855</td><td>2060</td><td>0.044</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>150,000</td><td>5</td><td>22.83</td><td>22.96</td><td>22.46–23.21</td><td>6571</td><td>2017</td><td>2380</td><td>0.046</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>160,000</td><td>5</td><td>24.04</td><td>24.06</td><td>23.73–24.44</td><td>6656</td><td>1769</td><td>2079</td><td>0.048</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>165,521</td><td>5</td><td>24.74</td><td>24.64</td><td>24.19–25.27</td><td>6691</td><td>1647</td><td>2011</td><td>0.046</td><td>0.050</td><td>31</td><td>107</td></tr>
+</table>
+<p class="note">* parallel-scan reported RSS — transient high-water artifact, not retention.</p>
+<p class="note">Data columns (raw.tsv): files, rep, named, catalog_s, catalog_rss_kb, catalog_peak_kb,
+closure_s, modules, submodules, diags. Environment: 16 cores / 15 GB RAM; runs on the restored YangModels-scale
+population (the stable "YangModels vendor-tree scale" sample).</p>
+<p class="note"><b>Closure-root note:</b> the closure roots are the first 20 distinct module names of each
+interval's catalog, so the *content* of the closure changes with the interval — at 10k files the pick lands on
+a heavier closure (~3 s, 24 modules, 3 diags) while at 20k+ it is the same light set (~0.05 s, 31 modules,
+107 diags). The catalog numbers are the tree-scale signal; the closure column measures a fixed protocol, not a
+fixed module set.</p>
+</body></html>

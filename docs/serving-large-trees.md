@@ -75,4 +75,7 @@ B. LS: `fill_catalog` + `sync_open_closure` replace the whole-tree scan;
    sync paths). Open buffers parse full; closure members parse text-light.
 C. Benchmarks: open N real modules in a synthetic giant tree; record wall
    time, RSS curve (memstep logs) and per-feature latency; iterate.
-   **PENDING** (needs the giant sample or a synthetic stand-in).
+   **DONE** — statistical grid on the restored giant population (10k-step
+   intervals × 5 runs each): catalog wall ≈3.6 s @10k → ≈24.7 s @full,
+   serving stays flat. See `docs/perf/giant-scale-2026-09/report.html`
+   (raw results + summary + charts + repro scripts).

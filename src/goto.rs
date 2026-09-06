@@ -230,11 +230,7 @@ pub(crate) fn resolve(
             if !path.starts_with('/') {
                 return None;
             }
-            let lookup = match path.find('[') {
-                Some(i) => &path[..i],
-                None => &path,
-            };
-            let node = lib.resolve_abs_schema_node_id(scope, lookup)?;
+            let node = lib.resolve_abs_schema_node_id(scope, &path)?;
             let loc = node.defining();
             Target {
                 url: loc.url.to_string(),

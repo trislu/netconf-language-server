@@ -280,6 +280,16 @@ pub(crate) fn handle(
                 node.kind()
             ))
         }
+        K::Refine => {
+            let t = crate::goto::refine_target_in_file(root, stmt, scope, lib)?;
+            let name = t
+                .arg
+                .as_ref()
+                .map(|a| a.name())
+                .unwrap_or_default()
+                .to_string();
+            Some(format!("refine target node **`{name}`**"))
+        }
         _ => None,
     }
 }
@@ -393,5 +403,22 @@ mod tests {
         let b = DV.find("deviation \"/db:c/db:mtu\"").unwrap() + "deviation \"".len();
         let t = handle(&rope, &root, b, "dv", &lib).expect("deviation hover");
         assert!(t.contains("deviation target **`mtu`**"), "{t}");
+    }
+
+    #[test]
+    fn hover_refine_target() {
+        const RF: &str = "module rf {\n  namespace \"urn:rf\";\n  prefix rf;\n\
+          grouping cfg { container inner { leaf host { type string; } } }\n\
+          container app { uses cfg { refine inner/host { default \"x\"; } } }\n\
+        }\n";
+        let mut repo = Repository::new();
+        repo.upsert("/rf.yang", RF.to_string());
+        let out = repo.compile();
+        let lib = out.library.expect("library");
+        let rope = Rope::from_str(RF);
+        let root = repo.statement("/rf.yang").expect("root");
+        let b = RF.find("refine inner/host").unwrap() + "refine inner/".len() + 1;
+        let t = handle(&rope, root, b, "rf", &lib).expect("refine hover");
+        assert!(t.contains("refine target node **`host`**"), "{t}");
     }
 }

@@ -277,7 +277,7 @@ pub(crate) fn resolve(
 /// Walk the refine target path (descendant names) inside the grouping that
 /// the nearest enclosing `uses` instantiates. Grouping definitions in the
 /// same file are supported; cross-file groupings return `None`.
-fn refine_target_in_file<'a>(
+pub(crate) fn refine_target_in_file<'a>(
     root: &'a Statement,
     refine: &Statement,
     scope: &str,
@@ -319,7 +319,7 @@ fn refine_target_in_file<'a>(
     Some(cur)
 }
 
-fn is_data_stmt(kind: &StatementKind) -> bool {
+pub(crate) fn is_data_stmt(kind: &StatementKind) -> bool {
     use StatementKind as K;
     matches!(
         kind,

@@ -483,28 +483,35 @@ impl Server {
             Window::log(warning!("scan skipped: cannot resolve root path")).await;
             return;
         };
-        let mut index = CatalogIndex::default();
-        let mut named = 0usize;
-        for path in workspace::walk_yang_files(&root_path) {
-            let Some(url) = workspace::path_to_url(&path) else {
-                continue;
-            };
-            // Canonical spelling so catalog keys equal open-buffer keys even
-            // when the client URI and this walk disagree on encoding/case.
-            let url = workspace::canon_url(&url);
-            let Ok(text) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            let record = yrepo::Catalog::scan(url, text);
-            if !record.name.is_empty() {
-                named += 1;
-            }
-            index.push(record);
-        }
-        let total = index.len();
+        let files = workspace::walk_yang_files(&root_path);
+        let total = files.len();
+        // TEMP EXPERIMENT (uncommitted): rayon-driven parallel catalog scan.
+        // yrepo's CatalogIndex::scan_many_files_with fans the read+Catalog::scan
+        // out over the rayon global pool (sized to the machine's cores) and
+        // takes the caller's url mapping (canonical file urls here), wrapped in
+        // spawn_blocking so the async handler never blocks a runtime worker.
+        // START → END elapsed is printed for hand A/B against the sequential build.
+        let start = Instant::now();
+        Window::log(info!(format!(
+            "workspace catalog scan START: {total} yang files (parallel, rayon pool)"
+        )))
+        .await;
+        let scanned = tokio::task::spawn_blocking(move || {
+            let mut index = CatalogIndex::default();
+            let n = index.scan_many_files_with(&files, |p| {
+                workspace::path_to_url(p).map(|u| workspace::canon_url(&u))
+            });
+            (index, n)
+        })
+        .await
+        .expect("catalog scan task panicked");
+        let (index, n) = scanned;
+        let duration = start.elapsed();
+        let distinct = index.names().len();
         *self.catalog.write().await = Some(Arc::new(index));
         Window::log(info!(format!(
-            "workspace catalog: {named} named modules over {total} yang files"
+            "workspace catalog scan END after {:.3}s (parallel, rayon pool): scanned {n}/{total} yang files, {distinct} distinct module names",
+            duration.as_secs_f64()
         )))
         .await;
     }

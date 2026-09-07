@@ -8,6 +8,27 @@ and this extension adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-07
+
+### Added
+
+- **Startup progress**: a visible progress notification is shown while the server
+  runs its initial workspace scan — the extension wraps `client.start()` in a
+  `window.withProgress` bar.
+
+### Changed
+
+- Bundled `netconf-language-server` updated to 0.3.0: the server adds
+  find-references / rename and goto/hover for `leafref` paths and `deviation`
+  targets, richer completion (groupings for `uses`, `leafref` path segments,
+  `augment`/`deviation` paths, module prefixes at absolute-path starts), and
+  now serves an **open closure** of the workspace (header-only catalog) so
+  startup time and memory track the files you have open rather than the whole
+  tree.
+- `netconf` settings are now applied on startup (previously fetched during
+  `initialize`, when the server-side client drops requests, so defaults were
+  used silently).
+
 ## [0.2.0] - 2026-09-06
 
 ### Changed

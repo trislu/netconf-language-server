@@ -13,7 +13,8 @@
                 "${workspaceFolder}/clients/vscode/**/*"
             ],
             "env": {
-                "__DEBUG_LSP_SERVER": "${workspaceFolder}/target/debug/netconf-language-server"
+                "__DEBUG_LSP_SERVER": "${workspaceFolder}/target/debug/netconf-language-server",
+                "RUST_BACKTRACE": "1",
             },
             "autoAttachChildProcesses": true,
             "preLaunchTask": "npm: build-server-and-client"
@@ -26,6 +27,23 @@
             "sourceLanguages": [
                 "rust"
             ]
-        }
+        },
+        {
+            "name": "With Release Server",
+            "type": "extensionHost",
+            "request": "launch",
+            "debugWebWorkerHost": true,
+            "args": [
+                "--extensionDevelopmentPath=${workspaceFolder}/clients/vscode"
+            ],
+            "outFiles": [
+                "${workspaceFolder}/clients/vscode/**/*"
+            ],
+            "env": {
+                "__DEBUG_LSP_SERVER": "${workspaceFolder}/target/release/netconf-language-server"
+            },
+            "autoAttachChildProcesses": true,
+            "preLaunchTask": "npm: build-server-and-client"
+        },
     ]
 }

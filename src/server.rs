@@ -10,6 +10,7 @@ use std::time::Instant;
 use moka::future::Cache;
 use ropey::Rope;
 use tokio::sync::{OnceCell, RwLock};
+
 use tower_lsp_server::{
     Client, LanguageServer,
     jsonrpc::{self, Error},
@@ -666,6 +667,16 @@ impl LanguageServer for Server {
         if let Some(uri) = params.root_uri {
             let _ = self.root_uri.set(uri);
         }
+
+        // Run the initial workspace scan + closure sync here, blocking the
+        // `initialize` response until it finishes. tower-lsp can never emit a
+        // client progress during `initialize` (it drops pre-initialize
+        // notifications), so the visible progress bar is shown by the extension
+        // while it awaits `client.start()` — which only resolves once this
+        // response is out — making the bar cover exactly the scan duration. It
+        // also keeps the first diagnostic pull from racing a half-built catalog.
+        self.ensure_scanned().await;
+
         Ok(InitializeResult {
             server_info: Some(ServerInfo {
                 name: "netconf-language-server".to_owned(),
@@ -698,6 +709,11 @@ impl LanguageServer for Server {
 
     async fn initialized(&self, _: InitializedParams) {
         Window::log(info!("[netconf-language-server] initialized.")).await;
+
+        // Fetch configuration now that the server is initialized. tower-lsp
+        // rejects client *requests* (workspace/configuration etc.) until the
+        // initialize response has been sent, so a fetch inside `initialize` was
+        // silently failing and config stayed at its default.
         if let Some(uri) = self.root_uri.get() {
             let item = ConfigurationItem {
                 scope_uri: Some(uri.clone()),
@@ -711,8 +727,6 @@ impl LanguageServer for Server {
                 let _ = self.config.set(config);
             }
         }
-        // Idempotent; an early diagnostic pull may already have scanned.
-        self.ensure_scanned().await;
     }
 
     async fn shutdown(&self) -> jsonrpc::Result<()> {

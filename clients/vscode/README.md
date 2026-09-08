@@ -1,15 +1,27 @@
 # NETCONF Language Support
 
 <p align="left">
+  <img src="https://img.shields.io/crates/v/netconf-language-server.svg?style=for-the-badge&label=crates.io" alt="Version" />
+  <img src="https://img.shields.io/crates/l/netconf-language-server.svg?style=for-the-badge&label=LICENSE" alt="Version" />
   <!-- marketplace-readme:remove-start -->
-  <a href="https://marketplace.visualstudio.com/items?itemName=k19.netconf"><img src="https://img.shields.io/badge/VS%20Code%20Marketplace-Install-007ACC?logo=visualstudiocode&logoColor=white&style=for-the-badge" alt="Install from VS Code Marketplace"></a>
-  <!-- marketplace-readme:remove-end -->
-  <img src="https://img.shields.io/github/v/release/trislu/netconf-language-server?style=for-the-badge&label=Version" alt="Version" />
+  <a href="https://marketplace.visualstudio.com/items?itemName=k19.netconf"><img src="https://img.shields.io/badge/VSCode%20Marketplace-Install-007ACC?logo=visualstudiocode&logoColor=white&style=for-the-badge" alt="Install from VS Code Marketplace"></a>
   <img src="https://vsmarketplacebadges.dev/installs-short/k19.netconf.svg?style=for-the-badge" alt="Installs" />
+  <br>
+  <a href="https://open-vsx.org/extension/k19/netconf"><img src="https://img.shields.io/badge/Open%20VSX%20Registry-Install-6A4FB6?style=for-the-badge" alt="Install from Open VSX"></a>
+  <a href="https://open-vsx.org/extension/k19/netconf"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fopen-vsx.org%2Fapi%2Fk19%2Fnetconf&query=downloadCount&label=Downloads&color=green&style=for-the-badge" alt="Open VSX downloads" /></a>
+  <br>
+  <!-- marketplace-readme:remove-end -->
 </p>
 
-VS Code extension for writing NETCONF **YANG** modules with the
-[NETCONF Language Server](../../README.md).
+> Write NETCONF/YANG files with the [NETCONF Language Server](../../README.md) — available for Visual Studio Code and Open VSX–compatible editors (VSCodium, Cursor, …).
+
+## Why
+
+<p align="left">
+<b>🎯 Semantic Oriented</b> — 🧠 read with insight · ✍️ write with ease<br>
+<b>🦀 Native Rust</b> — 0️⃣ zero runtime · 🚀 just launch<br>
+<b>⚡ Blazing Fast</b> — 🚅 all 3.6 GB of <a href="https://github.com/YangModels/yang">YangModels/yang</a>  parsed in ~30s · 💾 2.1 GB peak RAM
+</p>
 
 ## Features
 

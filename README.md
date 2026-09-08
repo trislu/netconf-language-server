@@ -1,16 +1,27 @@
 # NETCONF Language Server
 
-[![Rust CI](https://github.com/trislu/netconf-language-server/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/trislu/netconf-language-server/actions/workflows/rust-ci.yml)
-[![Latest Version](https://img.shields.io/crates/v/netconf-language-server.svg)](https://crates.io/crates/netconf-language-server)
-[![License](https://img.shields.io/crates/l/netconf-language-server.svg)](LICENSE)
+<p align="left">
+  <img src="https://img.shields.io/crates/v/netconf-language-server.svg?style=for-the-badge&label=crates.io" alt="Version" />
+  <img src="https://img.shields.io/crates/l/netconf-language-server.svg?style=for-the-badge&label=LICENSE" alt="Version" />
+  <!-- marketplace-readme:remove-start -->
+  <a href="https://marketplace.visualstudio.com/items?itemName=k19.netconf"><img src="https://img.shields.io/badge/VSCode%20Marketplace-Install-007ACC?logo=visualstudiocode&logoColor=white&style=for-the-badge" alt="Install from VS Code Marketplace"></a>
+  <img src="https://vsmarketplacebadges.dev/installs-short/k19.netconf.svg?style=for-the-badge" alt="Installs" />
+  <br>
+  <a href="https://open-vsx.org/extension/k19/netconf"><img src="https://img.shields.io/badge/Open%20VSX%20Registry-Install-6A4FB6?style=for-the-badge" alt="Install from Open VSX"></a>
+  <a href="https://open-vsx.org/extension/k19/netconf"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fopen-vsx.org%2Fapi%2Fk19%2Fnetconf&query=downloadCount&label=Downloads&color=green&style=for-the-badge" alt="Open VSX downloads" /></a>
+  <br>
+  <!-- marketplace-readme:remove-end -->
+</p>
 
-A [language server](https://microsoft.github.io/language-server-protocol/) for
-reading and writing **NETCONF / YANG** text documents. Which is:
+> A [language server](https://microsoft.github.io/language-server-protocol/) for
+reading and writing **NETCONF / YANG** files.
+
+## Why
 
 <p align="left">
-<b>🎯 Semantic Oriented</b> — 🧠 boost reading · 🔧 enhance writing<br>
+<b>🎯 Semantic Oriented</b> — 🧠 read with insight · ✍️ write with ease<br>
 <b>🦀 Native Rust</b> — 0️⃣ zero runtime · 🚀 just launch<br>
-<b>⚡ Blazing Fast</b> — 🚅 ~30s parsing · 💾 2.1 GB peak RAM for all <b>3.6 GB</b> <a href="https://github.com/YangModels/yang">YangModels/yang</a> files.
+<b>⚡ Blazing Fast</b> — 🚅 all 3.6 GB of <a href="https://github.com/YangModels/yang">YangModels/yang</a>  parsed in ~30s · 💾 2.1 GB peak RAM
 </p>
 
 ## Features

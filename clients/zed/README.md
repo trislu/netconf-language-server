@@ -1,6 +1,19 @@
 # NETCONF Language Support
 
-This is a Zed extension for reading and writing **YANG**/**NETCONF**(xml)/**RESTCONF**(json) files.
+<p align="left">
+  <img src="https://img.shields.io/crates/v/netconf-language-server.svg?style=for-the-badge&label=crates.io" alt="Version" />
+  <img src="https://img.shields.io/crates/l/netconf-language-server.svg?style=for-the-badge&label=LICENSE" alt="Version" />
+</p>
+
+> Write NETCONF/YANG files with the [NETCONF Language Server](../../README.md).
+
+## Why
+
+<p align="left">
+<b>🎯 Semantic Oriented</b> — 🧠 read with insight · ✍️ write with ease<br>
+<b>🦀 Native Rust</b> — 0️⃣ zero runtime · 🚀 just launch<br>
+<b>⚡ Blazing Fast</b> — 🚅 all 3.6 GB of <a href="https://github.com/YangModels/yang">YangModels/yang</a>  parsed in ~30s · 💾 2.1 GB peak RAM
+</p>
 
 ## Features
 

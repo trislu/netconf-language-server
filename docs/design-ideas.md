@@ -147,6 +147,12 @@ leaving it alone until some standard defines a protocol for this.
   mechanism considered, then shelved — Lua-in-Rust ruled out (runtime/plugin
   friction, unstable surface); left until a standard defines the protocol.
 
+## 2026-09-09
+
+- [id-04] Concrete engineering plan for multi-workspace (multi-root) support:
+  Option A (one merged logical tree) recommended; ~4–6 focused days in five
+  phases. Tracked in [`docs/multi-root-workspaces.md`](multi-root-workspaces.md).
+
 <!-- Promoted examples:
 - [id-00] … → promoted: D31 (architecture §13/§14) — removed from this log.
 -->

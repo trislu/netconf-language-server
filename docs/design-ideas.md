@@ -11,7 +11,7 @@
 
 ## Personal Suggestions
 
-> NOTE: very subjective and biased. Section numbers (§000–§003) are local to
+> NOTE: very subjective and biased. Section numbers (§000–§005) are local to
 > this file — unrelated to `architecture.md`'s sections.
 
 ### §000. Nothing is perfect
@@ -27,8 +27,8 @@ The `choice` and `case` statements are badly designed for NETCONF/YANG. If you
 have ever worked on YANG compilation or NETCONF server/client development, you
 know what I mean.
 
-Let's say if the telecommunications industry indeed want this feature: one statement
-could beat these two, implemented like this:
+Let's suppose the industry really does want this feature: a single statement
+could replace both of these, like so:
 
 ```yang
 container alice {
@@ -62,9 +62,9 @@ And a JSON one like:
 }
 ```
 
-If you reply that nested and sibling `choice`s are what you need, and that the
-above would increase the data-tree depth and cause performance issues, blah
-blah — then you're right! But we all know the problem is your modeling brain,
+If you reply that nested and sibling `choice`s are what you need, or that the
+above would deepen the data tree and cost performance — blah blah — then
+you're not wrong. But we both know the real problem is the modeling brain,
 not the grammar.
 
 *Open question (for me): is `single-selection` schema metadata (so it never
@@ -77,7 +77,7 @@ proposing.*
 The problem here is that, semantically, `grouping`/`uses` is almost equivalent
 to `submodule`, and `include`/`belongs-to` is somewhat duplicated.
 
-If you reply, *"hey, I do want to put a bunch of concepts into a single
+If your reply is, *"hey, I do want to put a bunch of concepts into a single
 namespace, but there are too many of them, so I have no choice but to split
 them into a module/submodule tree"* — so that readers get a "top-level cleaner"
 view from the entry module and need extra semantic tools to navigate between
@@ -87,15 +87,22 @@ I suggest you rework your modeling design, sincerely.
 
 ### §003. Don't use `uses-augment` / `refine` if you have an alternative option
 
-I don't want to explain; they smell like a patch semantic for something not
-correctly designed in the first place. If that is indeed the case, I believe the
-solution is organizational/commercial, not grammatical.
+I won't bother explaining; they smell like patch semantics bolted onto
+something that was misdesigned from the start. If that's really the case, the
+fix is organizational/commercial, not grammatical.
 
-### §004. Don't use plus character ("+") for string concatenation if you have an alternative option
+### §004. Don't use the plus sign (`+`) for string concatenation
 
-Just don't. If whitespace-charaters/word-wrap becomes a key factor of decision making, then the model is shit.
+Just don't. If whitespace handling or word-wrap ever becomes the deciding
+factor, the model is shit.
 
-## Future lean on this language server design
+### §005. Limit XPath in `must`/`when` statements
+
+Or better yet, don't use them at all.
+
+## Future directions for this language server
+
+### 0x001 A semantic IR / standard YANG compile pipeline
 
 From my point of view, what the NETCONF ecosystem — or community, if there is
 one — lacks is a semantic IR (intermediate representation) or a standard
@@ -107,6 +114,19 @@ will consider refactoring this language server so it becomes
 *yang-library-transparent*: users could pick their YANG-library build tools as
 they wish, or not expose the actual YANG at all (vendors may introduce their own
 magical extensions).
+
+### 0x002 Introduce scripting for vendor extensions
+
+A pyang-style plugin mechanism would genuinely help people who build on YANG
+— statistics, analysis, extension handling. I'm not trying to redo what pyang
+already does well; I just think scripting is a future requirement this project
+can't avoid.
+
+I looked into Lua-in-Rust and gave up. pyang plugins are written in Python, so
+its extension story has no language friction. Bolting a scripting language
+onto a Rust implementation would drag in too much: the meta-info, the semantic
+phases, the Lua environment — more than I can picture ever stabilizing. So I'm
+leaving it alone until some standard defines a protocol for this.
 
 ## Log
 
@@ -120,6 +140,12 @@ magical extensions).
 - [id-02] Direction (potential milestone): a semantic IR / standard YANG compile
   pipeline; possibly make the LS `yang-library-transparent` (yrepo as the
   draft). Not committed.
+
+## 2026-09-08
+
+- [id-03] Fleshed out §0x002 (vendor-extension scripting): a pyang-style plugin
+  mechanism considered, then shelved — Lua-in-Rust ruled out (runtime/plugin
+  friction, unstable surface); left until a standard defines the protocol.
 
 <!-- Promoted examples:
 - [id-00] … → promoted: D31 (architecture §13/§14) — removed from this log.

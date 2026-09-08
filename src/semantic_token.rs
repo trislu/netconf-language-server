@@ -397,6 +397,48 @@ mod tests {
         (rope, abs)
     }
 
+    /// A `+`-concatenated quoted argument (`namespace "…" + "…"`) must color
+    /// each quoted segment as a String and the `+` as an Operator (regression:
+    /// these were previously not highlighted).
+    #[test]
+    fn concatenated_namespace_highlights_each_string_and_plus() {
+        let src = "module n {\n  namespace \"http://foo/bar/\"\n          + \"qux\";\n}\n";
+        let (rope, abs) = tokens_for(src);
+        let spans: Vec<(String, u32)> = abs
+            .iter()
+            .map(|&(l, c, len, ty)| (seg_text(&rope, l, c, len), ty))
+            .collect();
+        let first = "\"http://foo/bar/\"";
+        let second = "\"qux\"";
+        let detail = |need: &str| {
+            format!(
+                "missing {need:?} token; emitted spans:\n{spans:#?}",
+                spans = spans
+            )
+        };
+        assert!(
+            spans
+                .iter()
+                .any(|(t, ty)| t == first && *ty == Class::String as u32),
+            "{}",
+            detail(first)
+        );
+        assert!(
+            spans
+                .iter()
+                .any(|(t, ty)| t == second && *ty == Class::String as u32),
+            "{}",
+            detail(second)
+        );
+        assert!(
+            spans
+                .iter()
+                .any(|(t, ty)| t == "+" && *ty == Class::Operator as u32),
+            "{}",
+            detail("+")
+        );
+    }
+
     fn line_utf16_len(rope: &Rope, line: u32) -> u32 {
         let i = (line as usize).min(rope.len_lines().saturating_sub(1));
         rope.line(i).chars().map(|c| c.len_utf16() as u32).sum()

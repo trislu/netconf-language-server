@@ -30,6 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   open-closure hits. The index is now invalidated after any successful rename
   (`Server::invalidate_refidx`) and rebuilt lazily from disk on the next
   whole-tree request.
+- **Concatenated quoted arguments not highlighted** (`namespace "…" + "…"`):
+  the grammar lexes the leading quoted fragment as a hidden token, so it was
+  missing from `yrepo::Repository::tokens` and never colored (the `+` and
+  later fragments were). Fixed upstream in `yrepo` (`parse` now recovers
+  quoted runs and `+` operators inside argument spans via
+  `augment_quoted_fragments`); the semantic-token lexical pass then colors
+  them as any other `String`/`Operator` token.
 
 ## [0.3.0] - 2026-09-07
 

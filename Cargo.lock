@@ -392,7 +392,7 @@ dependencies = [
 
 [[package]]
 name = "netconf-language-server"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "dunce",
  "moka",
@@ -930,9 +930,9 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter-yang"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60e5ab29ed583d80e46421c4365258584f1d062ed7097eeaab968e633aa00674"
+checksum = "0c2a391803df9272d54fb0591eefa5ce6d8542d873303b154f05b62ec0ee4286"
 dependencies = [
  "cc",
  "codegen",
@@ -1046,9 +1046,9 @@ checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 
 [[package]]
 name = "yrepo"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "773ff6a2c20ac42accce1bc55626fbc49fc3b7ab96baae6683f8171e1402c719"
+checksum = "36944224d8ffad23d2620528104e51a5a9c1111d92d4ac278196e37591036822"
 dependencies = [
  "rayon",
  "tree-sitter",

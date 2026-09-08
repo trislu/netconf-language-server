@@ -8,11 +8,20 @@ and this extension adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-09
+
 ### Added
 
 - **Restart Language Server command** (`NETCONF: Restart Language Server`):
   stops and restarts the language client via `client.restart()`, wrapped in a
   visible progress bar while the server re-runs its workspace scan.
+
+### Changed
+
+- Bundled `netconf-language-server` updated to 0.4.0: whole-tree Find
+  References & Rename, a caret-resolution fix for definition statements, a
+  stale-index fix after rename, and a highlight fix for concatenated quoted
+  strings.
 
 ## [0.3.0] - 2026-09-07
 

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-09
+
 ### Added
 
 - **Whole-tree Find References & Rename beyond the open closure**:
@@ -18,9 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`src/client.rs` `Progress`, `src/server.rs` `ensure_refidx`), with richer
   `window/logMessage` detail (caret word, resolved `module:local`, open-closure
   vs whole-tree hit counts, elapsed ms). A caret anywhere on a definition
-  statement (name, keyword, or body gap) resolves to it. Requires the local
-  `yrepo` working tree via a temporary `[patch.crates-io]` until the next yrepo
-  release.
+  statement (name, keyword, or body gap) resolves to it.
+
+### Changed
+
+- **Dependency: `yrepo` 0.5.0** — whole-tree references/rename are now backed
+  by the released `yrepo::ReferenceIndex`; the local `[patch.crates-io]`
+  override is removed. Bundles the `tree-sitter-yang` 0.4.1 grammar fix and
+  the token-stream fix for concatenated quoted fragments.
 
 ### Fixed
 

@@ -1,6 +1,6 @@
 [package]
 name = "netconf-language-server"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 description = "A language server implemented in rust for reading & writing NETCONF/YANG text"
 authors = ["Lu Kai <mailto:lukai@mail.ustc.edu.cn>"]
@@ -27,7 +27,7 @@ tree-sitter = "0.26"
 tree-sitter-xml = "0.7"
 tree-sitter-json = "0.24"
 
-yrepo = { version = "0.4", features = ["parallel"] }
+yrepo = { version = "0.5.0", features = ["parallel"] }
 
 [profile.release]
 strip = true

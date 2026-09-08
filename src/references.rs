@@ -79,18 +79,26 @@ pub(crate) fn def_at(
     }
 
     let arg = stmt.arg.as_ref()?;
-    if !arg.range.contains(&byte) {
-        return None;
-    }
     let name = arg.name();
     let (prefix, local) = split_ref(name);
 
     if is_def_kind(&stmt.kind) {
-        // Caret on a definition's own name: its module is the document scope.
-        return Some(Def {
-            module: scope.to_string(),
-            local: name.to_string(),
-        });
+        // Caret anywhere on a *definition* statement resolves to that
+        // definition: on its own name (the argument), on its keyword, or in a
+        // body gap (whitespace/comments directly under it — `narrowest_at`
+        // folds those up to the statement because no child covers the byte).
+        // A caret on text inside a nested child (e.g. `description` prose)
+        // lands on that child instead and is not treated as the definition.
+        if !name.is_empty() {
+            return Some(Def {
+                module: scope.to_string(),
+                local: name.to_string(),
+            });
+        }
+        return None;
+    }
+    if !arg.range.contains(&byte) {
+        return None;
     }
     if !is_ref_kind(&stmt.kind) {
         return None;
@@ -230,6 +238,77 @@ mod tests {
         // include_declaration adds the definition in A.
         let hits = find_references(&def, &docs, &lib, true);
         assert_eq!(hits.len(), 4, "hits: {hits:?}");
+    }
+
+    #[test]
+    fn self_prefixed_module_def_at_mirrors_ietf_yang_types() {
+        // ietf-yang-types style: a module whose own prefix is `yang` (used to
+        // reference its own typedefs as `yang:counter32`), with description
+        // prose that also contains the bare word `counter32`.
+        const T: &str = "module ietf-yang-types {\n  namespace \"urn:ietf\";\n  prefix yang;\n\n\
+        \x20 typedef counter32 {\n    type uint32;\n    description\n\
+        \x20    \"a schema node of type counter32 at times other than re-init\";\n  }\n\
+        \x20 typedef zero-based-counter32 {\n    type yang:counter32;\n  }\n\
+        \x20 typedef other {\n    type uint32;\n  }\n}\n";
+        let mut r = Repository::new();
+        r.upsert("/t.yang", T.to_string());
+        let out = r.compile();
+        let lib = out.library.expect("lib");
+        let root = r.statement("/t.yang").expect("root");
+        let rope = Rope::from_str(T);
+
+        // Caret on the *definition* name `counter32` (line `typedef counter32`).
+        let def = def_at(
+            &rope,
+            root,
+            caret_in(T, "typedef "),
+            "ietf-yang-types",
+            &lib,
+        )
+        .expect("def on typedef name");
+        assert_eq!(
+            (def.module.as_str(), def.local.as_str()),
+            ("ietf-yang-types", "counter32")
+        );
+
+        // Caret on the self-prefixed reference `type yang:counter32`.
+        let def2 = def_at(
+            &rope,
+            root,
+            caret_in(T, "type yang:"),
+            "ietf-yang-types",
+            &lib,
+        )
+        .expect("def on self-prefixed reference");
+        assert_eq!(
+            (def2.module.as_str(), def2.local.as_str()),
+            ("ietf-yang-types", "counter32")
+        );
+
+        // Caret in the body gap right after the name (before `{`) still
+        // resolves to the definition — the observed `Typedef (body)` case.
+        let gap = T.find("counter32 {").unwrap() + "counter32".len();
+        let def3 = def_at(&rope, root, gap, "ietf-yang-types", &lib).expect("def on body gap");
+        assert_eq!(
+            (def3.module.as_str(), def3.local.as_str()),
+            ("ietf-yang-types", "counter32")
+        );
+
+        // Caret on the statement keyword `typedef` resolves to it as well.
+        let kw = T.find("typedef counter32").unwrap() + 2;
+        let def4 = def_at(&rope, root, kw, "ietf-yang-types", &lib).expect("def on keyword");
+        assert_eq!(
+            (def4.module.as_str(), def4.local.as_str()),
+            ("ietf-yang-types", "counter32")
+        );
+
+        // The prose mention of `counter32` inside a description is NOT a
+        // definition (it must not resolve).
+        let prose = T.find("type counter32 at").unwrap() + "type ".len();
+        assert!(
+            def_at(&rope, root, prose, "ietf-yang-types", &lib).is_none(),
+            "prose inside a description is not a reference"
+        );
     }
 
     #[test]

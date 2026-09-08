@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Whole-tree Find References & Rename beyond the open closure**:
+  `textDocument/references` and `textDocument/rename` now also search every
+  on-disk module that imports the definition's module (e.g. a typedef in
+  `ietf-yang-types` used across the tree) via the new lazy
+  `yrepo::ReferenceIndex` — the first such request builds the index over the
+  workspace behind a server→client work-done progress bar
+  (`src/client.rs` `Progress`, `src/server.rs` `ensure_refidx`), with richer
+  `window/logMessage` detail (caret word, resolved `module:local`, open-closure
+  vs whole-tree hit counts, elapsed ms). A caret anywhere on a definition
+  statement (name, keyword, or body gap) resolves to it. Requires the local
+  `yrepo` working tree via a temporary `[patch.crates-io]` until the next yrepo
+  release.
+
+### Fixed
+
+- **Stale whole-tree results after a rename**: the on-disk `ReferenceIndex`
+  was built once and cached, so after a whole-tree rename rewrote files (old
+  symbol name → new), a follow-up Find References on the new name only saw the
+  open-closure hits. The index is now invalidated after any successful rename
+  (`Server::invalidate_refidx`) and rebuilt lazily from disk on the next
+  whole-tree request.
+
 ## [0.3.0] - 2026-09-07
 
 ### Added

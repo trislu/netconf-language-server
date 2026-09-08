@@ -4,11 +4,12 @@
 //! the JSON-RPC transport, enforced by `#![deny(clippy::print_stdout)]`).
 
 use std::fmt::Display;
+use std::sync::atomic::{AtomicI32, Ordering};
 
 use tokio::sync::OnceCell;
 use tower_lsp_server::{
-    Client, jsonrpc,
-    ls_types::{ConfigurationItem, LSPAny, MessageType},
+    Client, NotCancellable, OngoingProgress, Unbounded, jsonrpc,
+    ls_types::{ConfigurationItem, LSPAny, MessageType, ProgressToken},
 };
 
 static CLIENT_INSTANCE: OnceCell<Client> = OnceCell::const_new();
@@ -124,3 +125,62 @@ impl Edits {
         }
     }
 }
+
+/// A live server→client work-done progress stream (unbounded,
+/// non-cancellable). Created by [`Progress::work_done`]; report intermediate
+/// messages with [`WorkDone::report`] and always end with [`WorkDone::finish`].
+pub(crate) struct WorkDone {
+    ongoing: OngoingProgress<Unbounded, NotCancellable>,
+}
+
+impl WorkDone {
+    /// Update the secondary progress message shown in the client UI.
+    pub(crate) async fn report<M: Into<String>>(&self, message: M) {
+        self.ongoing.report(message).await;
+    }
+
+    /// End the progress stream (must be called exactly once).
+    pub(crate) async fn finish(self) {
+        self.ongoing.finish().await;
+    }
+}
+
+/// Server→client `window/workDoneProgress` helpers, mirroring [`Window`].
+pub(crate) struct Progress;
+
+impl Progress {
+    /// Begin an unbounded work-done progress stream titled `title` with an
+    /// initial `message`. Returns `None` when no client is connected yet or
+    /// the client declined `window/workDoneProgress/create` — callers should
+    /// simply run without a progress bar in that case.
+    pub(crate) async fn work_done(
+        title: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Option<WorkDone> {
+        let client = CLIENT_INSTANCE.get()?.clone();
+        // Namespaced string token: server-created work-done tokens share the
+        // client's progress namespace, so a numeric token could in principle
+        // collide with a token the client generated itself. The `netconf/`
+        // prefix makes our stream's token unique across the session (each
+        // process also restarts its own counter, which is fine since tokens
+        // are scoped to one client↔server connection).
+        let n = PROGRESS_TOKEN.fetch_add(1, Ordering::Relaxed);
+        let token = ProgressToken::String(format!("netconf/wd/{n}"));
+        if client
+            .create_work_done_progress(token.clone())
+            .await
+            .is_err()
+        {
+            return None;
+        }
+        let ongoing = client
+            .progress(token, title.into())
+            .with_message(message.into())
+            .begin()
+            .await;
+        Some(WorkDone { ongoing })
+    }
+}
+
+/// Monotonic counter suffixing each server work-done progress token.
+static PROGRESS_TOKEN: AtomicI32 = AtomicI32::new(1);

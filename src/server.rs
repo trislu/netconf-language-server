@@ -9,7 +9,7 @@ use std::time::Instant;
 
 use moka::future::Cache;
 use ropey::Rope;
-use tokio::sync::{OnceCell, RwLock};
+use tokio::sync::{Mutex, OnceCell, RwLock};
 
 use tower_lsp_server::{
     Client, LanguageServer,
@@ -29,7 +29,7 @@ use tower_lsp_server::{
         Uri, WorkspaceEdit,
     },
 };
-use yrepo::{CatalogIndex, Library, Statement, StatementKind};
+use yrepo::{CatalogIndex, Library, ReferenceIndex, Statement, StatementKind};
 
 use crate::{
     client::{self, Diagnostics, Window, Workspace},
@@ -65,6 +65,12 @@ pub(crate) struct Server {
     /// Header-only catalog of the whole on-disk workspace (`Catalog::scan`),
     /// built once by `ensure_scanned`. None until a workspace root exists.
     catalog: RwLock<Option<Arc<CatalogIndex>>>,
+    /// Whole-tree reference index (`ReferenceIndex`), built lazily by
+    /// `ensure_refidx` on the first whole-tree references request. Records
+    /// definition/reference occurrences from every on-disk `.yang` file so a
+    /// library symbol's usages in importing modules can be found without
+    /// materializing those modules into the open-closure repository.
+    refidx: RwLock<Option<Arc<ReferenceIndex>>>,
     /// Urls of the currently open YANG buffers (the roots of the closure).
     open_yang: RwLock<HashSet<String>>,
     docs: Cache<String, std::sync::Arc<Document>>,
@@ -72,6 +78,8 @@ pub(crate) struct Server {
     generation: AtomicU64,
     snap: RwLock<Option<Snapshot>>,
     scan: OnceCell<()>,
+    /// Build guard for the whole-tree reference index (see [`Server::ensure_refidx`]).
+    refidx_build: Mutex<()>,
 }
 
 impl Server {
@@ -81,12 +89,14 @@ impl Server {
             root_uri: OnceLock::new(),
             repo: RwLock::new(yrepo::Repository::new()),
             catalog: RwLock::new(None),
+            refidx: RwLock::new(None),
             open_yang: RwLock::new(HashSet::new()),
             docs: Cache::new(u32::MAX as u64), // unbounded; the client controls open buffers
             config: OnceLock::new(),
             generation: AtomicU64::new(0),
             snap: RwLock::new(None),
             scan: OnceCell::new(),
+            refidx_build: Mutex::new(()),
         }
     }
 
@@ -470,6 +480,77 @@ impl Server {
             .await;
     }
 
+    /// Make sure the whole-tree [`ReferenceIndex`] has been built before a
+    /// whole-tree references search. Unlike [`Server::ensure_scanned`] this
+    /// runs lazily (not on startup): the index is only needed by
+    /// "find all references" on a symbol whose usages live in modules that
+    /// merely *import* the open one, and it costs a full statement-walk of the
+    /// tree, so the first such request shows a server→client progress bar
+    /// covering the build. The index mirrors the *on-disk* workspace, so it is
+    /// **rebuilt** whenever disk content may have changed — see
+    /// [`Server::invalidate_refidx`], called after a whole-tree rename that
+    /// rewrote non-open files. Returns `None` when there is no workspace root.
+    async fn ensure_refidx(&self) -> Option<Arc<ReferenceIndex>> {
+        if let Some(ix) = self.refidx.read().await.clone() {
+            return Some(ix);
+        }
+        // Rebuildable single-flight guard: a rename can invalidate the index,
+        // so this is not a one-shot OnceCell. Handlers run serially
+        // (`concurrency_level(1)`), but keep the double-checked lock anyway.
+        let _guard = self.refidx_build.lock().await;
+        if let Some(ix) = self.refidx.read().await.clone() {
+            return Some(ix);
+        }
+        let root = self.root_uri.get()?;
+        let Some(root_path) = workspace::url_to_path(&root.to_string()) else {
+            Window::log(warning!("refidx scan skipped: cannot resolve root path")).await;
+            return None;
+        };
+        let files = workspace::walk_yang_files(&root_path);
+        let total = files.len();
+        let progress = client::Progress::work_done(
+            "Searching references",
+            format!("Indexing {total} YANG files …"),
+        )
+        .await;
+        let start = Instant::now();
+        let scanned = tokio::task::spawn_blocking(move || {
+            let mut ix = ReferenceIndex::default();
+            let n = ix.scan_many_files_with(&files, |p| {
+                workspace::path_to_url(p).map(|u| workspace::canon_url(&u))
+            });
+            (ix, n)
+        })
+        .await
+        .expect("refidx scan task panicked");
+        let (ix, n) = scanned;
+        let duration = start.elapsed();
+        let occ = ix.len();
+        *self.refidx.write().await = Some(Arc::new(ix));
+        if let Some(progress) = progress {
+            progress
+                .report(format!(
+                    "Indexed {n}/{total} YANG files ({occ} references)."
+                ))
+                .await;
+            progress.finish().await;
+        }
+        Window::log(info!(format!(
+            "workspace reference index ready in {:.3}s: {n}/{total} yang files, {occ} occurrences",
+            duration.as_secs_f64()
+        )))
+        .await;
+        self.refidx.read().await.clone()
+    }
+
+    /// Drop the whole-tree [`ReferenceIndex`] because the on-disk workspace
+    /// may have changed (a rename/workspace edit rewrote files the cached
+    /// index no longer reflects). The next whole-tree references request
+    /// rebuilds it lazily from disk.
+    async fn invalidate_refidx(&self) {
+        *self.refidx.write().await = None;
+    }
+
     /// Build the header-only catalog of every on-disk `.yang` file
     /// (`Catalog::scan`, transient parse, ~KB per file). No full parses, no
     /// repository ingest: this is what lets a giant tree be indexed without
@@ -827,32 +908,74 @@ impl LanguageServer for Server {
         let tdp = &params.text_document_position;
         let uri = workspace::canon_url(&tdp.text_document.uri.to_string());
         if !workspace::is_yang(&uri) {
+            Window::log(warning!(format!("references: not a YANG doc: {uri}"))).await;
             return Ok(None);
         }
         self.ensure_scanned().await;
         let byte = match self.caret_byte(&uri, tdp.position).await {
             Ok(b) => b,
-            Err(_) => return Ok(None),
+            Err(_) => {
+                Window::log(warning!(format!(
+                    "references: failed to get caret byte for URI: {uri}"
+                )))
+                .await;
+                return Ok(None);
+            }
         };
         let include_decl = params.context.include_declaration;
+        let started = Instant::now();
         let Some(rope) = self.rope_for(&uri).await else {
+            Window::log(warning!(format!("references: no rope for URI: {uri}"))).await;
             return Ok(None);
         };
-        let hits = {
+        let (def, mut hits) = {
             let repo = self.repo.read().await;
             let Some(root) = repo.statement(&uri) else {
+                Window::log(warning!(format!("references: no statement for URI: {uri}"))).await;
                 return Ok(None);
             };
             let Some(scope) = Self::module_scope(root) else {
+                Window::log(warning!(format!("references: no scope for URI: {uri}"))).await;
                 return Ok(None);
             };
+            let caret_word = rope
+                .get_byte_slice(range_for_word(&rope, byte))
+                .map(|s| s.to_string())
+                .unwrap_or_default();
             let snap = self.snapshot().await;
             let Some(lib) = snap.lib.as_ref() else {
+                Window::log(warning!(format!("references: no library for URI: {uri}"))).await;
                 return Ok(None);
             };
             let Some(def) = references::def_at(&rope, root, byte, &scope, lib) else {
+                // Say *where* the caret landed so "no definition found" is
+                // diagnosable: e.g. prose inside a `description` that merely
+                // contains the word (not a reference) vs a real name the
+                // engine does not know how to resolve.
+                let ctx = root
+                    .narrowest_at(byte)
+                    .map(|s| {
+                        let spot = if s.keyword.as_ref().is_some_and(|k| k.contains(&byte)) {
+                            "keyword"
+                        } else if s.arg.as_ref().is_some_and(|a| a.range.contains(&byte)) {
+                            "argument"
+                        } else {
+                            "body"
+                        };
+                        format!("{:?} ({spot})", s.kind)
+                    })
+                    .unwrap_or_else(|| "no statement".to_owned());
+                Window::log(warning!(format!(
+                    "references: no definition found at '{caret_word}' in module '{scope}' (nearest statement {ctx}) for URI: {uri}"
+                )))
+                .await;
                 return Ok(None);
             };
+            Window::log(info!(format!(
+                "references: caret on '{caret_word}' in module '{scope}' → {{ module: {}, local: {} }} (include_declaration={include_decl}) for URI: {uri}",
+                def.module, def.local
+            )))
+            .await;
             let mut urls: Vec<String> = Vec::new();
             for m in lib.modules() {
                 for u in m.source_urls() {
@@ -876,9 +999,49 @@ impl LanguageServer for Server {
                     Some((u.clone(), st, sc))
                 })
                 .collect();
-            references::find_references(&def, &docs, lib, include_decl)
+            Window::log(info!(format!(
+                "references: open-closure search over {} docs for URI: {uri}",
+                docs.len()
+            )))
+            .await;
+            let closure = references::find_references(&def, &docs, lib, include_decl);
+            Window::log(info!(format!(
+                "references: open closure found {} hits for URI: {uri}",
+                closure.len()
+            )))
+            .await;
+            (def, closure)
         };
+        // Whole-tree search: usages in every on-disk module that imports the
+        // definition's module. Those modules are never materialized into the
+        // open closure, so the closure search above cannot see them; the
+        // whole-tree ReferenceIndex answers them from its recorded
+        // occurrences. Open buffers are covered by the closure search (live
+        // text), so the index only adds on-disk documents.
+        if let Some(ix) = self.ensure_refidx().await {
+            let open: HashSet<String> = self.open_yang.read().await.iter().cloned().collect();
+            let mut added = 0usize;
+            for (u, range) in ix.references(&def.module, &def.local, include_decl) {
+                let s = u.to_string();
+                if open.contains(&s) || hits.iter().any(|(hu, hr)| hu == &s && hr == &range) {
+                    continue;
+                }
+                hits.push((s, range));
+                added += 1;
+            }
+            Window::log(info!(format!(
+                "references: whole-tree index ({} docs) added {added} hits for {}:{} for URI: {uri}",
+                ix.doc_count(),
+                def.module,
+                def.local
+            )))
+            .await;
+        }
         if hits.is_empty() {
+            Window::log(info!(format!(
+                "references: no references found for URI: {uri}"
+            )))
+            .await;
             return Ok(Some(Vec::new()));
         }
         let mut out = Vec::with_capacity(hits.len());
@@ -894,6 +1057,12 @@ impl LanguageServer for Server {
                 range: convert::range_to_lsp(&rrope, range),
             });
         }
+        Window::log(info!(format!(
+            "references: found {} references for URI: {uri} in {:.1} ms",
+            out.len(),
+            started.elapsed().as_secs_f64() * 1e3
+        )))
+        .await;
         Ok(Some(out))
     }
 
@@ -950,7 +1119,7 @@ impl LanguageServer for Server {
         let Some(rope) = self.rope_for(&uri).await else {
             return Ok(None);
         };
-        let (_local, hits) = {
+        let (module, local, mut hits) = {
             let repo = self.repo.read().await;
             let Some(root) = repo.statement(&uri) else {
                 return Ok(None);
@@ -989,8 +1158,31 @@ impl LanguageServer for Server {
                 })
                 .collect();
             let hits = references::find_references(&def, &docs, lib, true);
-            (def.local, hits)
+            (def.module.clone(), def.local.clone(), hits)
         };
+        // Whole-tree rename: also rewrite usages in every on-disk module that
+        // imports the definition's module (those are never materialized in the
+        // open closure). Open buffers are covered by the closure search above
+        // (live text), so the index only adds on-disk documents.
+        if let Some(ix) = self.ensure_refidx().await {
+            let open: HashSet<String> = self.open_yang.read().await.iter().cloned().collect();
+            let mut added = 0usize;
+            for (u, range) in ix.references(&module, &local, true) {
+                let s = u.to_string();
+                if open.contains(&s) || hits.iter().any(|(hu, hr)| hu == &s && hr == &range) {
+                    continue;
+                }
+                hits.push((s, range));
+                added += 1;
+            }
+            Window::log(info!(format!(
+                "rename: whole-tree index ({} docs) added {added} sites for {}:{} for URI: {uri}",
+                ix.doc_count(),
+                module,
+                local
+            )))
+            .await;
+        }
         if hits.is_empty() {
             return Ok(None);
         }
@@ -1011,6 +1203,13 @@ impl LanguageServer for Server {
                 uri_map.insert(lu, edits);
             }
         }
+        // A successful rename rewrites files on disk (open buffers now carry
+        // the new name, and whole-tree sites land in modules the cached
+        // ReferenceIndex no longer reflects), so drop the whole-tree index:
+        // the next whole-tree references request rebuilds it from the updated
+        // disk. The client applies the edit asynchronously, so do NOT rebuild
+        // here — just invalidate and let the next request re-read the disk.
+        self.invalidate_refidx().await;
         Ok(Some(WorkspaceEdit {
             changes: Some(uri_map),
             ..Default::default()

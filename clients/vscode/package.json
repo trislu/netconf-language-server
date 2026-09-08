@@ -48,6 +48,10 @@
       {
         "command": "netconf.insertConfigPayload",
         "title": "NETCONF: Insert config payload"
+      },
+      {
+        "command": "netconf.restart",
+        "title": "NETCONF: Restart Language Server"
       }
     ],
     "languages": [

@@ -158,6 +158,34 @@ export async function activate(context: ExtensionContext) {
         )
     }
     log("template commands registered.")
+
+    // Restart the language server (useful after changing configuration, or
+    // when the server gets into a bad state). `client.restart()` re-runs the
+    // initialize handshake, so the client-driven progress bar covers the
+    // server's workspace rescan again.
+    context.subscriptions.push(
+        commands.registerCommand("netconf.restart", async () => {
+            log("restarting language client...")
+            try {
+                await window.withProgress(
+                    {
+                        location: ProgressLocation.Notification,
+                        title: "NETCONF Language Server",
+                        cancellable: false,
+                    },
+                    async (progress) => {
+                        progress.report({ message: "Restarting Language Server..." })
+                        await client.restart()
+                    },
+                )
+                log("language client restarted.")
+            } catch (err) {
+                log(`language client restart failed: ${err}`)
+                await window.showErrorMessage(`netconf-language-server: restart failed: ${err}`)
+            }
+        }),
+    )
+    log("restart command registered.")
 }
 
 export function deactivate() {

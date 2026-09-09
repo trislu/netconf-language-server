@@ -83,6 +83,18 @@ and **write** (completion):
   for manual testing.
 - [`docs/architecture.md`](docs/architecture.md) — the design document and decision record.
 
+## Contributing
+
+Issues and PRs are raised in the same place — pick the repo by what the problem
+is about:
+
+- **[tree-sitter-yang](https://github.com/trislu/tree-sitter-yang)** — YANG doesn't *parse* (grammar/syntax gaps).
+- **[yrepo](https://github.com/trislu/yrepo)** — YANG *parses* but resolves or compiles wrong (semantics, diagnostics, library API).
+- **[this repo](https://github.com/trislu/netconf-language-server)** — editor/extension behavior on top (features, instance docs, vscode/zed clients).
+
+Rule of thumb: parse → `tree-sitter-yang`, resolve → `yrepo`, editor → here.
+Not sure? Open it here.
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).

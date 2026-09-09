@@ -18,7 +18,7 @@ impl Config {
     pub(crate) fn indent_width(&self) -> u32 {
         self.indent_size
             .map(|v| u32::from(v.clamp(1, 16)))
-            .unwrap_or(4)
+            .unwrap_or(2)
     }
 }
 

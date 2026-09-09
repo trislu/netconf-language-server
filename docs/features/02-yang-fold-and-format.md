@@ -13,7 +13,7 @@ whole statements (comments are kept and re-indented with their statement).
 - **Formatting**: rewrites the whole document, aligning statements under their
   keyword. When it runs: on the editor's *Format Document* action (and
   format-on-save when you enable it). **Customization**: the indentation
-  width is set by `netconf.indentSize` (default `4`).
+  width is set by `netconf.indentSize` (default `2`).
 - **Limitations**
   - Formatting is **skipped while the document has syntax errors** (the
     reformatter would have to guess at error-recovered content).

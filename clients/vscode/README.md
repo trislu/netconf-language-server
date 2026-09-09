@@ -54,7 +54,7 @@
 
 ## Configuration
 
-- `netconf.indentSize` (default `4`): spaces per indentation level when
+- `netconf.indentSize` (default `2`): spaces per indentation level when
   formatting.
 
 - `netconf.semantic` (default `{}`): per-role YANG semantic-highlight

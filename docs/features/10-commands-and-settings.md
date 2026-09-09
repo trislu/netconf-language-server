@@ -19,10 +19,12 @@ apply to the running server:
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `netconf.indentSize` | `4` | formatter indentation width (2–8) |
+| `netconf.indentSize` | `2` | formatter indentation width (2–8) |
+| `netconf.semantic` | `{}` | per-role semantic-token classification (see [01-yang-highlight.md](01-yang-highlight.md)) |
 
-`netconf.indentSize` is today the only setting; it drives the formatter (see
-[02-yang-fold-and-format.md](02-yang-fold-and-format.md)).
+`netconf.indentSize` drives the formatter (see
+[02-yang-fold-and-format.md](02-yang-fold-and-format.md)); `netconf.semantic`
+customizes highlighting.
 
 ## For developers
 

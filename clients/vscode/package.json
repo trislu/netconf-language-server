@@ -71,7 +71,7 @@
       "properties": {
         "netconf.indentSize": {
           "type": "number",
-          "default": 4,
+          "default": 2,
           "minimum": 2,
           "maximum": 8,
           "description": "Number of spaces used per indentation level when formatting YANG"

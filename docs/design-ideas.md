@@ -128,6 +128,22 @@ onto a Rust implementation would drag in too much: the meta-info, the semantic
 phases, the Lua environment — more than I can picture ever stabilizing. So I'm
 leaving it alone until some standard defines a protocol for this.
 
+### 0x003 Rethink the YANG parser (predictable error recovery)
+
+`yrepo` parses YANG with the `tree-sitter-yang` grammar. tree-sitter's GLR
+error recovery is implicit — `ERROR`/`MISSING` node extents are emergent from
+the grammar, not author-steerable — so one bad statement can collapse a whole
+subtree and cascade unresolved-import/typedef noise into importers. A
+feasibility study is tracked in
+[`docs/parser-recovery-feasibility.md`](parser-recovery-feasibility.md): it
+honours the CST-dropped, whole-document, non-incremental contract of
+`yrepo/src/syntax.rs`, compares keep-and-harden / hand-written recursive
+descent / PEG / LALR / libyang, and recommends a hand-written scanner +
+recursive-descent statement parser whose recovery rule is "emit one error,
+sync to the next `;` at the same depth" — a bounded-damage guarantee
+tree-sitter cannot express — staged with tree-sitter-yang kept as an A/B
+oracle for corpus parity.
+
 ## Log
 
 <!-- Date-stamped, low-ceremony entries. Prefix each with [id-NN]. -->
@@ -152,6 +168,15 @@ leaving it alone until some standard defines a protocol for this.
 - [id-04] Concrete engineering plan for multi-workspace (multi-root) support:
   Option A (one merged logical tree) recommended; ~4–6 focused days in five
   phases. Tracked in [`docs/multi-root-workspaces.md`](multi-root-workspaces.md).
+
+## 2026-09-10
+
+- [id-05] Parser feasibility study (§0x003): replacing `tree-sitter-yang` in
+  `yrepo` for predictable, bounded error recovery — tree-sitter recovery is
+  emergent and can collapse whole subtrees. Hand-written scanner +
+  recursive-descent parser recommended (Option B/F, ~8–14 days, A/B parity
+  gate); see
+  [`docs/parser-recovery-feasibility.md`](parser-recovery-feasibility.md).
 
 <!-- Promoted examples:
 - [id-00] … → promoted: D31 (architecture §13/§14) — removed from this log.

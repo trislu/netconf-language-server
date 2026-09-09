@@ -1,8 +1,9 @@
 # NETCONF Language Support
 
 <p align="left">
-  <img src="https://img.shields.io/crates/v/netconf-language-server.svg?style=for-the-badge&label=crates.io" alt="Version" />
+  <a href="https://crates.io/crates/netconf-language-server"><img src="https://img.shields.io/crates/v/netconf-language-server.svg?style=for-the-badge&label=crates.io" alt="Version" /></a>
   <img src="https://img.shields.io/crates/l/netconf-language-server.svg?style=for-the-badge&label=LICENSE" alt="Version" />
+  <br>
   <!-- marketplace-readme:remove-start -->
   <a href="https://marketplace.visualstudio.com/items?itemName=k19.netconf"><img src="https://img.shields.io/badge/VSCode%20Marketplace-Install-007ACC?logo=visualstudiocode&logoColor=white&style=for-the-badge" alt="Install from VS Code Marketplace"></a>
   <img src="https://vsmarketplacebadges.dev/installs-short/k19.netconf.svg?style=for-the-badge" alt="Installs" />
@@ -49,7 +50,7 @@
   <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/clients/vscode/resources/images/netconf-vscode-jcomp-20260905.png" alt="JSON completion" width="720">
 </p>
 
-> For more details, see the [LSP features guide](../docs/features.md) in the repo.
+> For more details, see the [LSP features guide](../../docs/features.md) in the repo.
 
 ## Configuration
 

@@ -1,7 +1,7 @@
 # NETCONF Language Support
 
 <p align="left">
-  <img src="https://img.shields.io/crates/v/netconf-language-server.svg?style=for-the-badge&label=crates.io" alt="Version" />
+  <a href="https://crates.io/crates/netconf-language-server"><img src="https://img.shields.io/crates/v/netconf-language-server.svg?style=for-the-badge&label=crates.io" alt="Version" /></a>
   <img src="https://img.shields.io/crates/l/netconf-language-server.svg?style=for-the-badge&label=LICENSE" alt="Version" />
 </p>
 

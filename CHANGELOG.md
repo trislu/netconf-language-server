@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-09-10
 
 ### Added
 
@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `deprecated` modifier.
   (`src/semantic_token.rs` `Class`/`Modifier`/`Role`/`Style`, `src/config.rs`,
   `src/server.rs`.)
+
+### Changed
+
+- **`netconf.indentSize` default lowered to `2`** (was `4`): the formatter
+  indents two spaces per level for unconfigured users; an explicit setting is
+  unaffected.
 
 ### Fixed
 

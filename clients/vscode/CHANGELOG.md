@@ -6,7 +6,7 @@ documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this extension adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-09-10
 
 ### Added
 
@@ -30,9 +30,10 @@ and this extension adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ### Changed
 
-- Bundled `netconf-language-server` updated to announce the **full standard**
-  semantic token type + modifier legend so every per-role choice applies
-  without a restart.
+- Bundled `netconf-language-server` updated to **0.5.0**: announces the **full
+  standard** semantic token type + modifier legend so every per-role choice
+  applies without a restart; `netconf.indentSize` now defaults to `2` (was
+  `4`).
 
 ## [0.4.0] - 2026-09-09
 

@@ -8,6 +8,32 @@ and this extension adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+### Added
+
+- **Semantic-highlight settings** `netconf.semantic`: a per-role object where
+  each YANG construct family (module/type/data-node/enum names, `units`,
+  `rangeLength`, `patternArg`, …) selects a semantic token **type** from any
+  standard type plus **modifiers** (multi-select). Applied live — no server
+  restart.
+- **Richer built-ins**: `pattern` arguments color as `regexp`, and
+  `status deprecated;` declarations get the standard `deprecated` modifier on
+  their whole subtree — including the `status deprecated;` marker's own words.
+- **Deprecation styling**: striking the `deprecated` subtree is a theme/rule
+  concern (VS Code reads `editor.semanticTokenColorCustomizations` at the theme
+  layer, so a language-scoped extension default cannot force it) — set it in
+  user settings to opt in:
+  ```jsonc
+  "editor.semanticTokenColorCustomizations": {
+    "rules": { "*.deprecated:yang": { "strikethrough": true } }
+  }
+  ```
+
+### Changed
+
+- Bundled `netconf-language-server` updated to announce the **full standard**
+  semantic token type + modifier legend so every per-role choice applies
+  without a restart.
+
 ## [0.4.0] - 2026-09-09
 
 ### Added

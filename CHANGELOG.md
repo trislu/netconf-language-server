@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Customizable YANG semantic highlighting** (`netconf.semantic`): the server
+  now announces the **full standard LSP semantic-token legend** (every
+  `SemanticTokenType` and `SemanticTokenModifier`) and resolves classification
+  per *role* at `semantic_tokens_full` time, so any change applies with no
+  server restart. `netconf.semantic` is a per-role struct: each YANG construct
+  family (`moduleName`, `typeRef`, `enumAndBitNames`, `units`, … — 20 roles,
+  incl. `patternArg`) is
+  a member whose value picks the token **type** and optional **modifiers**
+  (multi-select), letting users compose any classification the semantic
+  highlight guide supports; a role left out keeps its built-in classification.
+  Built-in (no config needed): `pattern` arguments are colored `regexp`, and a
+  declaration with a `status deprecated;` child marks its whole subtree —
+  including the `status deprecated;` marker's own words — with the standard
+  `deprecated` modifier.
+  (`src/semantic_token.rs` `Class`/`Modifier`/`Role`/`Style`, `src/config.rs`,
+  `src/server.rs`.)
+
+### Fixed
+
+- **Live configuration updates** — `netconf.semantic` (and `netconf.indentSize`)
+  changes now take effect immediately: `didChangeConfiguration` previously
+  stored into a `OnceLock`, so updates after the startup fetch were silently
+  dropped. The server now keeps a replaceable config and, when the semantic
+  classification changed, asks the client to refresh semantic tokens
+  (`workspace/semanticTokens/refresh`) so open documents re-highlight at once.
+
 ## [0.4.0] - 2026-09-09
 
 ### Added
@@ -50,7 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Find References & Rename** (`textDocument/references`, `textDocument/rename`
-  + `prepareRename`) for `typedef` / `grouping` / `identity` / `feature` /
+  - `prepareRename`) for `typedef` / `grouping` / `identity` / `feature` /
   `extension` symbols: references are gathered across every compiled module and
   submodule of the library (`src/references.rs`); rename validates the new name
   and rewrites the declaration plus all reference sites in a single workspace

@@ -75,6 +75,1130 @@
           "minimum": 2,
           "maximum": 8,
           "description": "Number of spaces used per indentation level when formatting YANG"
+        },
+        "netconf.semantic": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": false,
+          "properties": {
+            "moduleName": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ],
+                  "markdownDescription": "Semantic token type (any standard type)."
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true,
+                  "markdownDescription": "Semantic token modifiers (multi-select). Empty array clears the role's built-in modifiers."
+                }
+              },
+              "markdownDescription": "Module / submodule / import / prefix *names*."
+            },
+            "typeRef": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ]
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "markdownDescription": "`type` / `uses` / `base` / `refine` reference arguments."
+            },
+            "deviateVerb": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ]
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "markdownDescription": "`deviate add|replace|delete|not-supported` verb words."
+            },
+            "dateString": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ]
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "markdownDescription": "`revision` / `revision-date` date arguments."
+            },
+            "rangeLength": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ]
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "markdownDescription": "`range` / `length` argument strings."
+            },
+            "patternArg": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "default": "regexp",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ],
+                  "markdownDescription": "Semantic token type (any standard type)."
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true,
+                  "default": [],
+                  "markdownDescription": "Semantic token modifiers (multi-select)."
+                }
+              },
+              "markdownDescription": "`pattern` arguments (regex strings) — built-in token is `regexp`."
+            },
+            "keyUniqueAugment": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ]
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "markdownDescription": "`key` / `unique` / `augment` member-list and path strings."
+            },
+            "dataNodeName": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ]
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "markdownDescription": "Data-node definition names (container/leaf/list/choice/case/…)."
+            },
+            "definitionName": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ]
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "markdownDescription": "Other definition names (grouping/typedef/identity/feature/extension)."
+            },
+            "enumAndBitNames": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ],
+                  "default": "variable",
+                  "markdownDescription": "Semantic token type (any standard type)."
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true,
+                  "default": [],
+                  "markdownDescription": "Semantic token modifiers (multi-select)."
+                }
+              },
+              "markdownDescription": "`enum` / `bit` names — e.g. set `token` to `enumMember`."
+            },
+            "numberArgument": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ]
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "markdownDescription": "Bare signed number arguments (`default -10;`, `value -1;`)."
+            },
+            "referenceWord": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ]
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "markdownDescription": "Unquoted reference/value words (`if-feature`, `default`, `argument`, unquoted `namespace`)."
+            },
+            "vendorExtension": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ]
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "markdownDescription": "Unquoted vendor/unknown-extension arguments."
+            },
+            "units": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ],
+                  "default": "variable",
+                  "markdownDescription": "Semantic token type (any standard type)."
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true,
+                  "default": [
+                    "readonly"
+                  ],
+                  "markdownDescription": "Semantic token modifiers (multi-select). Built-in is `readonly` (constant)."
+                }
+              },
+              "markdownDescription": "Constant `units` values."
+            },
+            "comment": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ]
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "markdownDescription": "Comments."
+            },
+            "stringLiteral": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ]
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "markdownDescription": "Quoted strings inside composite arguments."
+            },
+            "numberLiteral": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ]
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "markdownDescription": "Numbers inside composite arguments."
+            },
+            "boolean": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ]
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "markdownDescription": "`true` / `false` value words."
+            },
+            "valueKeyword": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ]
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "markdownDescription": "Value keywords inside composite arguments (`status`, `ordered-by`, min/max)."
+            },
+            "operator": {
+              "type": "object",
+              "default": {},
+              "additionalProperties": false,
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "enum": [
+                    "namespace",
+                    "type",
+                    "class",
+                    "enum",
+                    "interface",
+                    "struct",
+                    "typeParameter",
+                    "parameter",
+                    "variable",
+                    "property",
+                    "enumMember",
+                    "event",
+                    "function",
+                    "method",
+                    "macro",
+                    "keyword",
+                    "modifier",
+                    "comment",
+                    "string",
+                    "number",
+                    "regexp",
+                    "operator",
+                    "decorator"
+                  ]
+                },
+                "modifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "declaration",
+                      "definition",
+                      "readonly",
+                      "static",
+                      "deprecated",
+                      "abstract",
+                      "async",
+                      "modification",
+                      "documentation",
+                      "defaultLibrary"
+                    ]
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "markdownDescription": "`+` string-concatenation operators."
+            }
+          },
+          "markdownDescription": "Per-role semantic-token classification. Each member is one YANG construct family (role); its value selects the **token type** (any standard `SemanticTokenType`) and the **modifiers** (multi-select, any standard `SemanticTokenModifier`). The server announces the full standard legend, so changes apply without a restart. A role left out keeps its built-in classification; an unknown role or type is ignored.\n\nExample:\n```jsonc\n\"netconf.semantic\": {\n  \"enumAndBitNames\": { \"token\": \"enumMember\" },\n  \"units\": { \"token\": \"variable\", \"modifiers\": [\"readonly\"] }\n}\n```"
         }
       }
     },

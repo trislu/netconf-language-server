@@ -111,6 +111,29 @@ impl Diagnostics {
     }
 }
 
+/// Ask the client to re-request semantic tokens (`workspace/semanticTokens/refresh`).
+pub(crate) struct Semantics;
+
+impl Semantics {
+    /// Request a full re-request of semantic tokens for every open document.
+    ///
+    /// Semantic tokens are a pull: the client only re-requests a document when
+    /// it changes — never when the server's *classification* changes (e.g. a
+    /// `netconf.semantic` edit arrives via `didChangeConfiguration`). Without
+    /// this, a new per-role token/modifier mapping would not show until the
+    /// document was edited or reopened. Fire-and-forget on purpose — the
+    /// `workspace/semanticTokens/refresh` request is spawned so no handler slot
+    /// is occupied while the client answers (handlers run serially).
+    pub(crate) fn refresh() {
+        if let Some(client) = CLIENT_INSTANCE.get() {
+            let client = client.clone();
+            tokio::spawn(async move {
+                let _ = client.semantic_tokens_refresh().await;
+            });
+        }
+    }
+}
+
 pub(crate) struct Edits;
 
 impl Edits {

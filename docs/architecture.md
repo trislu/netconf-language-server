@@ -489,22 +489,22 @@ pattern.
 > inside). The shipped map is a **richer** per-`StatementKind` classification with
 > whole-argument overrides — see the as-built table below §8.3.
 
-**As built** (`src/semantic_token.rs`): two passes emit disjoint, sorted items that are delta-encoded to LSP tokens. Pass 1 colors every statement `keyword` plus atomic args (one token over `arg.range`), classified by `arg_semantics(kind)`:
+**As built** (`src/semantic_token.rs`): two passes emit disjoint, sorted items that are delta-encoded to LSP tokens. Classification is decided **per role** (a `Role` per construct family): every role is a member of the `netconf.semantic` object, and `Style::from_settings(netconf.semantic)` resolves each role to a `(class, modifier-bits)` — the configured token type (any standard `SemanticTokenType`) and modifiers, or the role's built-in ones when unconfigured — at `semantic_tokens_full` time. Pass 1 colors every statement `keyword` plus atomic args (one token over `arg.range`), assigned a role by `role_of_kind(kind)`:
 
-| class | atomic args / whole-arg use |
-| --- | --- |
-| `namespace` | `module`/`submodule`/`import`/`include`/`belongs-to`/`prefix` args |
-| `type` | `type`/`uses`/`base`/`refine` args (identifier & `prefix:name` refs) |
-| `keyword` | the `deviate` verb args (`add`/`replace`/`delete`/`not-supported`) |
-| `string` | `revision`/`revision-date` dates, `range`/`length` args whole, `key`/`unique` member lists, (un)quoted `augment` paths |
-| `variable` | data-node & definition names: `container`/`leaf`/`leaf-list`/`list`/`choice`/`case`/`anyxml`/`anydata`/`rpc`/`action`/`notification`/`grouping`/`typedef`/`identity`/`feature`/`extension`/`bit`/`enum` args |
+| role (config key) | built-in class | atomic args / whole-arg use |
+| --- | --- | --- |
+| `moduleName` | `namespace` | `module`/`submodule`/`import`/`include`/`belongs-to`/`prefix` args |
+| `typeRef` | `type` | `type`/`uses`/`base`/`refine` args (identifier & `prefix:name` refs) |
+| `deviateVerb` | `keyword` | the `deviate` verb args (`add`/`replace`/`delete`/`not-supported`) |
+| `dateString`, `rangeLength`, `keyUniqueAugment` | `string` | `revision`/`revision-date` dates; `range`/`length` args whole; `key`/`unique` member lists, (un)quoted `augment` paths |
+| `patternArg` | `regexp` | `pattern` quoted args whole (the argument is a regex string) |
+| `dataNodeName` | `variable` | data-node names: `container`/`leaf`/`leaf-list`/`list`/`choice`/`case`/`anyxml`/`anydata`/`rpc`/`action`/`notification` args |
+| `definitionName` | `variable` | definition names: `grouping`/`typedef`/`identity`/`feature`/`extension` args |
+| `enumAndBitNames` | `variable` | `bit`/`enum` names |
 
-Whole-argument overrides (`whole_arg`) before the composite fallback: a bare
-(unquoted) signed-number argument (`default -10;`, `value -1;`) → `number`; an
-unquoted single word under `Unknown`/`if-feature`/`default`/`argument`/`namespace`
-→ `variable`; unquoted `units` values → `variable` **+ `readonly`** (the const
-proxy — LSP has no `const` tag). Composite args get **no** whole-arg token;
-pass 2 colors their inside.
+Whole-argument roles (`whole_arg_role`) before the composite fallback: `numberArgument` for a bare (unquoted) signed number (`default -10;`, `value -1;`) → `number`; `referenceWord` for an unquoted single word under `if-feature`/`default`/`argument`/`namespace` → `variable`; `vendorExtension` for unquoted `Unknown` (vendor extension) args → `variable`; `units` for unquoted `units` values → `variable` **+ `readonly`** (the const proxy — LSP has no `const` tag). Composite args get **no** whole-arg token; pass 2 colors their inside. The remaining roles (`comment`, `stringLiteral`, `numberLiteral`, `boolean`, `valueKeyword`, `operator`) cover the lexical pass. Because the legend announces the full standard set, a user can retarget **any** role to **any** token type and add **any** modifiers; unconfigured roles keep their built-in `(class, modifier-bits)`.
+
+**Deprecation (always-on, cross-cutting).** Any declaration whose direct child is a `status deprecated;` statement (`StatementKind::Status`, arg `deprecated`) gets the standard **`deprecated`** modifier OR'd into every token of its **whole subtree** — keyword, name, the `status deprecated;` marker's own words, and descendants (`handle` records the owning statement's byte range and ORs the bit after overlap-drop). `status obsolete;` has no standard modifier and is left unmarked.
 
 Pass 2 — lexical over `tokens()`: `Comment` anywhere and `Boolean` literals
 anywhere get their class; `String`/`Number`/`Operator`/`Keyword` tokens are
@@ -512,12 +512,20 @@ colored only when inside a composite span (so pass-1 statement keywords are neve
 double-colored). Value keywords such as `status deprecated`, `ordered-by user`
 and `min`/`max` are colored this way.
 
-Legend order: `keyword`, `namespace`, `type`, `variable`, `string`, `number`,
-`comment`, `operator`; modifiers: `readonly` only. Encoding pitfalls (see §2),
+Legend order (`Class::ALL`, the **full standard `SemanticTokenType` set**):
+`namespace`, `type`, `class`, `enum`, `interface`, `struct`, `typeParameter`,
+`parameter`, `variable`, `property`, `enumMember`, `event`, `function`,
+`method`, `macro`, `keyword`, `modifier`, `comment`, `string`, `number`,
+`regexp`, `operator`, `decorator`; modifiers (`Modifier::ALL`, the full standard
+`SemanticTokenModifier` set): `declaration`, `definition`, `readonly`, `static`,
+`deprecated`, `abstract`, `async`, `modification`, `documentation`,
+`defaultLibrary`. Since every standard type/modifier is announced up front, any
+`netconf.semantic` per-role choice applies with no client restart (the legend
+is immutable per session). Encoding pitfalls (see §2),
 as built: byte ranges → UTF-16 deltas
 (`delta_line`/`delta_start`); **every** multi-line token (long strings, `/* … */`
 comments) is split into one token per line; items sorted then overlaps dropped;
-`result_id` = doc version. Capability advertises `full` only (`SemanticTokensOptions`, no delta/range). Highlight behavior is pinned by the vendored `testdata/highlight` corpus + `baseline.json` (0 uncovered word tokens) and the per-shape assertions in `semantic_token::tests` (§11).
+`result_id` = doc version. Capability advertises `full` only (`SemanticTokensOptions`, no delta/range). Highlight behavior is pinned by the vendored `testdata/highlight` corpus + `baseline.json` (0 uncovered word tokens), the per-shape assertions in `semantic_token::tests`, and per-role/per-modifier tests. Config: `netconf.semantic` (per-role `token` + `modifiers` struct) in `src/config.rs` (§11).
 
 ### 8.4 Goto — `textDocument/definition` (implemented — `src/goto.rs`)
 

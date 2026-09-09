@@ -57,6 +57,35 @@
 - `netconf.indentSize` (default `4`): spaces per indentation level when
   formatting.
 
+- `netconf.semantic` (default `{}`): per-role YANG semantic-highlight
+  classification. Each member is one construct family (`moduleName`, `typeRef`,
+  `dataNodeName`, `definitionName`, `enumAndBitNames`, `units`, `rangeLength`,
+  `patternArg`, `vendorExtension`, … — 20 roles total) and its value is an
+  object picking the semantic token **type** (`"enumMember"`, `"property"`, … —
+  any standard type) and the **modifiers** (multi-select: `"readonly"`,
+  `"declaration"`, …).
+  A role left out keeps its built-in classification (notably `pattern` args are
+  `regexp`, and `status deprecated;` declarations get the `deprecated` modifier
+  on their whole subtree). The server announces the full standard legend, so
+  changes apply live — no server restart. Example:
+
+  ```jsonc
+  "netconf.semantic": {
+    "enumAndBitNames": { "token": "enumMember" },
+    "units": { "token": "variable", "modifiers": ["readonly"] }
+  }
+  ```
+
+To render `status deprecated;` declarations **struck through**, add the rule
+to your settings (VS Code reads `editor.semanticTokenColorCustomizations` at
+the theme layer, so this is opt-in rather than an extension default). The
+selector is explicitly scoped to YANG so it never affects other languages:
+```jsonc
+"editor.semanticTokenColorCustomizations": {
+  "rules": { "*.deprecated:yang": { "strikethrough": true } }
+}
+```
+
 ## References
 
 - [YANG](https://www.rfc-editor.org/info/rfc6020)

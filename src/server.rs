@@ -74,7 +74,11 @@ pub(crate) struct Server {
     /// Urls of the currently open YANG buffers (the roots of the closure).
     open_yang: RwLock<HashSet<String>>,
     docs: Cache<String, std::sync::Arc<Document>>,
-    config: OnceLock<Config>,
+    /// Live server configuration. A tokio `RwLock` (not a `OnceLock`) on
+    /// purpose: the client pushes updates via `didChangeConfiguration`, so the
+    /// stored value must be **replaceable** after the startup fetch — and it
+    /// is read from async handlers, so it must not be a std blocking lock.
+    config: RwLock<Config>,
     generation: AtomicU64,
     snap: RwLock<Option<Snapshot>>,
     scan: OnceCell<()>,
@@ -92,7 +96,7 @@ impl Server {
             refidx: RwLock::new(None),
             open_yang: RwLock::new(HashSet::new()),
             docs: Cache::new(u32::MAX as u64), // unbounded; the client controls open buffers
-            config: OnceLock::new(),
+            config: RwLock::new(Config::default()),
             generation: AtomicU64::new(0),
             snap: RwLock::new(None),
             scan: OnceCell::new(),
@@ -104,8 +108,13 @@ impl Server {
         self.generation.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn config(&self) -> Config {
-        self.config.get().cloned().unwrap_or_default()
+    async fn config(&self) -> Config {
+        self.config.read().await.clone()
+    }
+
+    /// Store a fresh configuration (startup fetch or live `didChangeConfiguration`).
+    async fn set_config(&self, config: Config) {
+        *self.config.write().await = config;
     }
 
     async fn open_doc(&self, uri: &str) -> jsonrpc::Result<std::sync::Arc<Document>> {
@@ -805,7 +814,7 @@ impl LanguageServer for Server {
                 && let Ok(config) = serde_json::from_value::<Config>(value)
             {
                 Window::log(info!(format!("config: {:?}", config))).await;
-                let _ = self.config.set(config);
+                self.set_config(config).await;
             }
         }
     }
@@ -816,8 +825,31 @@ impl LanguageServer for Server {
     }
 
     async fn did_change_configuration(&self, params: DidChangeConfigurationParams) {
-        if let Ok(config) = serde_json::from_value::<Config>(params.settings) {
-            let _ = self.config.set(config);
+        let Ok(config) = serde_json::from_value::<Config>(params.settings) else {
+            Window::log(warning!(
+                "didChangeConfiguration: could not parse netconf settings"
+            ))
+            .await;
+            return;
+        };
+        let semantic_changed = self.config().await.semantic != config.semantic;
+        self.set_config(config).await;
+        Window::log(info!(format!(
+            "config updated: {:?} (semantic {})",
+            self.config().await,
+            if semantic_changed {
+                "changed"
+            } else {
+                "unchanged"
+            }
+        )))
+        .await;
+        // A classification change only shows once open documents re-request
+        // semantic tokens: ask the client to refresh them now, otherwise the
+        // new `netconf.semantic` roles would not appear until a document is
+        // edited or reopened.
+        if semantic_changed {
+            crate::client::Semantics::refresh();
         }
     }
 
@@ -1226,10 +1258,12 @@ impl LanguageServer for Server {
             return Ok(None);
         }
         let doc = self.open_doc(&uri).await?;
+        let config = self.config().await;
         let repo = self.repo.read().await;
         let root = repo.statement(&uri);
         let tokens = repo.tokens(&uri).unwrap_or(&[]);
-        let data = semantic_token::handle(&doc.rope, root, tokens).unwrap_or_default();
+        let data =
+            semantic_token::handle(&doc.rope, root, tokens, &config.semantic).unwrap_or_default();
         let version = doc.version;
         drop(repo);
         Ok(Some(semantic_token::result(data, version)))
@@ -1272,11 +1306,12 @@ impl LanguageServer for Server {
             return Ok(None);
         }
 
+        let indent = self.config().await.indent_width();
         let formatted = {
             let repo = self.repo.read().await;
             let root = repo.statement(&uri);
             let comments = repo.comments(&uri).unwrap_or(&[]);
-            format::handle(&doc.rope, root, comments, self.config().indent_width())
+            format::handle(&doc.rope, root, comments, indent)
         };
         let Some(new_text) = formatted else {
             return Ok(None);

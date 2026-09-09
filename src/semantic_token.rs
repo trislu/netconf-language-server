@@ -19,100 +19,381 @@ use tower_lsp_server::ls_types::{
 };
 use yrepo::{Statement, StatementKind, Token, TokenKind};
 
-/// The semantic token classes we emit, in legend order (index == variant rank).
+use crate::config::{SemanticOverride, SemanticSettings};
+
+/// The token classes we emit, in legend order (index == variant rank). The enum
+/// is an **identical map to the standard LSP `SemanticTokenType` set**: every
+/// standard token type is announced in the server capability, so any of them
+/// can be picked per role in `netconf.semantic` without a client restart. A
+/// class that no role currently maps to simply produces no tokens by default.
+//
+// `Class` is a deliberate mirror of the LSP token type `"class"` (the variant
+// name therefore matches the enum name), so allow clippy's rename hint here.
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub(crate) enum Class {
-    Keyword = 0,
-    Namespace = 1,
-    Type = 2,
-    Variable = 3,
-    String = 4,
-    Number = 5,
-    Comment = 6,
-    Operator = 7,
+    Namespace = 0,
+    Type = 1,
+    Class = 2,
+    Enum = 3,
+    Interface = 4,
+    Struct = 5,
+    TypeParameter = 6,
+    Parameter = 7,
+    Variable = 8,
+    Property = 9,
+    EnumMember = 10,
+    Event = 11,
+    Function = 12,
+    Method = 13,
+    Macro = 14,
+    Keyword = 15,
+    Modifier = 16,
+    Comment = 17,
+    String = 18,
+    Number = 19,
+    Regexp = 20,
+    Operator = 21,
+    Decorator = 22,
 }
 
 impl Class {
-    fn lsp_type(self) -> SemanticTokenType {
-        use SemanticTokenType as T;
+    /// Every announced class, in legend order (index == variant rank).
+    const ALL: [Class; 23] = [
+        Class::Namespace,
+        Class::Type,
+        Class::Class,
+        Class::Enum,
+        Class::Interface,
+        Class::Struct,
+        Class::TypeParameter,
+        Class::Parameter,
+        Class::Variable,
+        Class::Property,
+        Class::EnumMember,
+        Class::Event,
+        Class::Function,
+        Class::Method,
+        Class::Macro,
+        Class::Keyword,
+        Class::Modifier,
+        Class::Comment,
+        Class::String,
+        Class::Number,
+        Class::Regexp,
+        Class::Operator,
+        Class::Decorator,
+    ];
+
+    /// The standard LSP tag (the `SemanticTokenType` name) of this class.
+    fn name(self) -> &'static str {
+        use Class as C;
         match self {
-            Class::Keyword => T::KEYWORD,
-            Class::Namespace => T::NAMESPACE,
-            Class::Type => T::TYPE,
-            Class::Variable => T::VARIABLE,
-            Class::String => T::STRING,
-            Class::Number => T::NUMBER,
-            Class::Comment => T::COMMENT,
-            Class::Operator => T::OPERATOR,
+            C::Namespace => "namespace",
+            C::Type => "type",
+            C::Class => "class",
+            C::Enum => "enum",
+            C::Interface => "interface",
+            C::Struct => "struct",
+            C::TypeParameter => "typeParameter",
+            C::Parameter => "parameter",
+            C::Variable => "variable",
+            C::Property => "property",
+            C::EnumMember => "enumMember",
+            C::Event => "event",
+            C::Function => "function",
+            C::Method => "method",
+            C::Macro => "macro",
+            C::Keyword => "keyword",
+            C::Modifier => "modifier",
+            C::Comment => "comment",
+            C::String => "string",
+            C::Number => "number",
+            C::Regexp => "regexp",
+            C::Operator => "operator",
+            C::Decorator => "decorator",
         }
+    }
+
+    /// Parse a class from its standard LSP name (a `netconf.semantic` value).
+    fn from_name(name: &str) -> Option<Class> {
+        Class::ALL.iter().copied().find(|c| c.name() == name)
+    }
+
+    fn lsp_type(self) -> SemanticTokenType {
+        SemanticTokenType::new(self.name())
     }
 }
 
-/// Modifier bit indices (match the `token_modifiers` legend order). The only
-/// modifier today is `readonly` (index 0 -> bit 1), used to style a constant
-/// `units` value; LSP has no `const` tag, `readonly` is the standard proxy.
-const MOD_CONST: u32 = 1;
+/// The token modifiers that can ride along with a role's token, mirroring the
+/// standard LSP `SemanticTokenModifier` set in legend order (index == variant
+/// rank → `token_modifiers_bitset` bit). All are announced, so any can be
+/// picked per role. The built-in classification only uses `readonly` — the
+/// const proxy on constant `units` values (LSP has no `const` tag).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub(crate) enum Modifier {
+    Declaration = 0,
+    Definition = 1,
+    Readonly = 2,
+    Static = 3,
+    Deprecated = 4,
+    Abstract = 5,
+    Async = 6,
+    Modification = 7,
+    Documentation = 8,
+    DefaultLibrary = 9,
+}
+
+impl Modifier {
+    /// Every announced modifier, in legend order (index == variant rank).
+    const ALL: [Modifier; 10] = [
+        Modifier::Declaration,
+        Modifier::Definition,
+        Modifier::Readonly,
+        Modifier::Static,
+        Modifier::Deprecated,
+        Modifier::Abstract,
+        Modifier::Async,
+        Modifier::Modification,
+        Modifier::Documentation,
+        Modifier::DefaultLibrary,
+    ];
+
+    /// The standard LSP tag (the `SemanticTokenModifier` name) of this modifier.
+    fn name(self) -> &'static str {
+        use Modifier as M;
+        match self {
+            M::Declaration => "declaration",
+            M::Definition => "definition",
+            M::Readonly => "readonly",
+            M::Static => "static",
+            M::Deprecated => "deprecated",
+            M::Abstract => "abstract",
+            M::Async => "async",
+            M::Modification => "modification",
+            M::Documentation => "documentation",
+            M::DefaultLibrary => "defaultLibrary",
+        }
+    }
+
+    /// Parse a modifier from its standard LSP name (a config value).
+    fn from_name(name: &str) -> Option<Modifier> {
+        Modifier::ALL.iter().copied().find(|m| m.name() == name)
+    }
+
+    /// This modifier's bit in a `token_modifiers_bitset`.
+    const fn bit(self) -> u32 {
+        1 << self as u32
+    }
+
+    /// Fold a set of modifiers into a `token_modifiers_bitset`.
+    fn bits(mods: &[Modifier]) -> u32 {
+        mods.iter().fold(0, |acc, m| acc | m.bit())
+    }
+
+    fn lsp(self) -> SemanticTokenModifier {
+        SemanticTokenModifier::new(self.name())
+    }
+}
+
+/// Bitset bit for the `readonly` (constant) modifier used by `units`.
+const MOD_CONST: u32 = Modifier::Readonly.bit();
 
 pub(crate) fn capability() -> SemanticTokensServerCapabilities {
     SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions {
         legend: SemanticTokensLegend {
-            token_types: [
-                Class::Keyword,
-                Class::Namespace,
-                Class::Type,
-                Class::Variable,
-                Class::String,
-                Class::Number,
-                Class::Comment,
-                Class::Operator,
-            ]
-            .iter()
-            .map(|c| c.lsp_type())
-            .collect(),
-            token_modifiers: vec![SemanticTokenModifier::READONLY],
+            token_types: Class::ALL.iter().map(|c| c.lsp_type()).collect(),
+            token_modifiers: Modifier::ALL.iter().map(|m| m.lsp()).collect(),
         },
         full: Some(SemanticTokensFullOptions::Bool(true)),
         ..Default::default()
     })
 }
 
-/// How a statement's argument should be colored (D4 map).
-#[derive(Debug, Clone, Copy)]
-enum ArgSemantics {
-    /// Identifier / identifier-ref: one token over the whole argument span.
-    Atomic(Class),
-    /// Value whose internals (string/number/bool/`+`) get their own tokens.
-    Composite,
+/// A *role*: **why** a span is colored. Each role is a member of the
+/// `netconf.semantic` configuration object (see [`Role::key`]); its value
+/// picks a [`Class`] (any standard token type) and optional [`Modifier`]s, so
+/// a user can retarget any construct without a rule engine. Every role has a
+/// built-in default [`Class`] (and, for constant `units`, the `readonly`
+/// modifier) that applies until configured.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Role {
+    /// Module/submodule/import/prefix *names* (D4 map: namespace).
+    ModuleName,
+    /// `type` / `uses` / `base` / `refine` reference arguments.
+    TypeRef,
+    /// `deviate add|replace|delete|not-supported` verb words.
+    DeviateVerb,
+    /// `revision` / `revision-date` date arguments.
+    DateString,
+    /// `range` / `length` string arguments (config key: `rangeLength`).
+    RangeLength,
+    /// `pattern` arguments — regex strings, colored `regexp` by default
+    /// (config key: `patternArg`).
+    PatternArg,
+    /// `key` / `unique` / (unquoted) `augment` string arguments.
+    ListRefString,
+    /// Data-node definition names (container/leaf/list/…/case).
+    DataName,
+    /// Other definition names (grouping/typedef/identity/feature/extension).
+    DefName,
+    /// `enum` / `bit` names (config key: `enumAndBitNames`).
+    EnumBitName,
+    /// A bare signed number argument (`default -10;`, `value -1;`, …).
+    NumberLiteral,
+    /// Unquoted reference/value words (`if-feature foo`, `default lo`, …).
+    WordArg,
+    /// Unquoted vendor-extension arguments (`StatementKind::Unknown`),
+    /// config key `vendorExtension`.
+    VendorExtArg,
+    /// Unquoted constant `units` values (Variable + `readonly` by default),
+    /// config key `units`.
+    UnitsConst,
+    /// Comments (grammar tokens, colored anywhere).
+    Comment,
+    /// Quoted strings inside composite arguments.
+    StringLit,
+    /// Numbers inside composite arguments.
+    NumberLit,
+    /// `true`/`false` value words (colored anywhere).
+    BooleanLit,
+    /// Value keywords inside composite arguments (`status`, `ordered-by`, …).
+    KeywordLit,
+    /// `+` string-concatenation operators.
+    OperatorLit,
 }
 
-fn arg_semantics(kind: &StatementKind) -> ArgSemantics {
+impl Role {
+    const ALL: [Role; 20] = [
+        Role::ModuleName,
+        Role::TypeRef,
+        Role::DeviateVerb,
+        Role::DateString,
+        Role::RangeLength,
+        Role::PatternArg,
+        Role::ListRefString,
+        Role::DataName,
+        Role::DefName,
+        Role::EnumBitName,
+        Role::NumberLiteral,
+        Role::WordArg,
+        Role::VendorExtArg,
+        Role::UnitsConst,
+        Role::Comment,
+        Role::StringLit,
+        Role::NumberLit,
+        Role::BooleanLit,
+        Role::KeywordLit,
+        Role::OperatorLit,
+    ];
+
+    /// The `netconf.semantic` member name for this role — every role is a key
+    /// of the configuration object, so any construct can be retargeted:
+    ///
+    /// `moduleName`, `typeRef`, `deviateVerb`, `dateString`, `rangeLength`,
+    /// `patternArg`, `keyUniqueAugment`, `dataNodeName`, `definitionName`,
+    /// `enumAndBitNames`, `numberArgument`, `referenceWord`, `vendorExtension`,
+    /// `units`, `comment`, `stringLiteral`, `numberLiteral`, `boolean`,
+    /// `valueKeyword`, `operator`.
+    fn key(self) -> &'static str {
+        use Role as R;
+        match self {
+            R::ModuleName => "moduleName",
+            R::TypeRef => "typeRef",
+            R::DeviateVerb => "deviateVerb",
+            R::DateString => "dateString",
+            R::RangeLength => "rangeLength",
+            R::PatternArg => "patternArg",
+            R::ListRefString => "keyUniqueAugment",
+            R::DataName => "dataNodeName",
+            R::DefName => "definitionName",
+            R::EnumBitName => "enumAndBitNames",
+            R::NumberLiteral => "numberArgument",
+            R::WordArg => "referenceWord",
+            R::VendorExtArg => "vendorExtension",
+            R::UnitsConst => "units",
+            R::Comment => "comment",
+            R::StringLit => "stringLiteral",
+            R::NumberLit => "numberLiteral",
+            R::BooleanLit => "boolean",
+            R::KeywordLit => "valueKeyword",
+            R::OperatorLit => "operator",
+        }
+    }
+
+    /// Parse a role from its config member name. `None` for an unknown key
+    /// (future-proofing — such keys are ignored, the role keeps its default).
+    fn from_key(key: &str) -> Option<Role> {
+        Role::ALL.iter().copied().find(|r| r.key() == key)
+    }
+
+    /// The class a role uses when nothing overrides it.
+    fn default_class(self) -> Class {
+        use Role as R;
+        match self {
+            R::ModuleName => Class::Namespace,
+            R::TypeRef => Class::Type,
+            R::DeviateVerb | R::BooleanLit | R::KeywordLit => Class::Keyword,
+            R::DateString | R::RangeLength | R::ListRefString | R::StringLit => Class::String,
+            R::PatternArg => Class::Regexp,
+            R::DataName
+            | R::DefName
+            | R::EnumBitName
+            | R::WordArg
+            | R::VendorExtArg
+            | R::UnitsConst => Class::Variable,
+            R::NumberLiteral | R::NumberLit => Class::Number,
+            R::Comment => Class::Comment,
+            R::OperatorLit => Class::Operator,
+        }
+    }
+
+    /// The modifiers a role carries by default — `readonly` (constant) for
+    /// `units` (REQ4), none otherwise.
+    fn default_mods(self) -> u32 {
+        match self {
+            Role::UnitsConst => MOD_CONST,
+            _ => 0,
+        }
+    }
+}
+
+/// Which statement kinds carry an *atomic* (whole-argument) role — one token
+/// over the argument span. `None` means the argument is composite and its
+/// inner literals (string/number/bool/`+`) are lexed instead.
+fn role_of_kind(kind: &StatementKind) -> Option<Role> {
+    use Role as R;
     use StatementKind as K;
-    match kind {
+    Some(match kind {
         // Names: modules/prefixes.
         K::Module | K::Submodule | K::Import | K::Include | K::BelongsTo | K::Prefix => {
-            ArgSemantics::Atomic(Class::Namespace)
+            R::ModuleName
         }
         // Type / grouping / identity references.
-        K::Type | K::Uses | K::Base | K::Refine => ArgSemantics::Atomic(Class::Type),
+        K::Type | K::Uses | K::Base | K::Refine => R::TypeRef,
         // `deviate` verb words (`add` / `replace` / `delete` / `not-supported`)
         // are colored like the keyword that introduces them.
         K::DeviateAdd | K::DeviateDelete | K::DeviateReplace | K::DeviateNotSupported => {
-            ArgSemantics::Atomic(Class::Keyword)
+            R::DeviateVerb
         }
         // Dates: `revision` / `revision-date` take a bare `YYYY-MM-DD` string.
-        K::Revision | K::RevisionDate => ArgSemantics::Atomic(Class::String),
+        K::Revision | K::RevisionDate => R::DateString,
         // Range / length expressions are string-valued per RFC; color the whole
         // argument (quoted or bare) as a string. Lexing their inner boundaries
         // instead would leave `range "-16..-1"` uncolored: the grammar hides
         // the digits of signed numbers inside the argument token, so only `-`,
         // `..` and quotes survive as leaves.
-        K::Range | K::Length => ArgSemantics::Atomic(Class::String),
+        K::Range | K::Length => R::RangeLength,
+        // `pattern` takes a quoted regex string; color the whole argument as a
+        // regexp (mirrors `range`/`length`, which also color whole arguments).
+        K::Pattern => R::PatternArg,
         // Key/unique member lists and (unquoted) augment target paths are
         // colored as one string for now (REQ1/REQ5); leaf-goto from them is
         // a deferred idea (see TODO.md).
-        K::Key | K::Unique | K::Augment => ArgSemantics::Atomic(Class::String),
-        // Data nodes and definition names.
+        K::Key | K::Unique | K::Augment => R::ListRefString,
+        // Data nodes.
         K::Container
         | K::Leaf
         | K::LeafList
@@ -123,16 +404,13 @@ fn arg_semantics(kind: &StatementKind) -> ArgSemantics {
         | K::Anydata
         | K::Rpc
         | K::Action
-        | K::Notification
-        | K::Grouping
-        | K::Typedef
-        | K::Identity
-        | K::Feature
-        | K::Extension
-        | K::Bit
-        | K::Enum => ArgSemantics::Atomic(Class::Variable),
-        _ => ArgSemantics::Composite,
-    }
+        | K::Notification => R::DataName,
+        // Definitions.
+        K::Grouping | K::Typedef | K::Identity | K::Feature | K::Extension => R::DefName,
+        // Enum/bit members.
+        K::Bit | K::Enum => R::EnumBitName,
+        _ => return None,
+    })
 }
 
 /// UTF-16 length of a byte range.
@@ -246,43 +524,152 @@ fn is_unquoted_word(raw: &str) -> bool {
         && !t.contains(|c: char| c.is_whitespace())
 }
 
-/// Whole-argument coloring for composite args whose raw text is a single
-/// literal. Returns `(class, modifier-bits)`, or `None` to fall back to the
-/// composite (inner-literal) coloring.
+/// The *role* for a composite argument whose raw text is a single literal.
+/// Returns `None` to fall back to the composite (inner-literal) coloring.
 ///
-/// - numbers (`default -10;`, `value -1;`, …) keep their own class;
-/// - an unquoted reference/value argument is colored like a `typedef` name:
-///   extension args, `if-feature foo;` (REQ2), `default disabled;` (REQ3),
+/// - numbers (`default -10;`, `value -1;`, …) keep their own role;
+/// - an unquoted reference/value argument is a `WordArg` (colored like a
+///   `typedef` name): `if-feature foo;` (REQ2), `default disabled;` (REQ3),
 ///   `argument name;` (REQ6), and unquoted `namespace` URIs;
-/// - an unquoted `units` value is a Variable with the `readonly` (constant)
-///   modifier (REQ4).
-fn whole_arg(kind: &StatementKind, raw: &str) -> Option<(Class, u32)> {
+/// - an unquoted vendor-extension argument (`StatementKind::Unknown`) is a
+///   `VendorExtArg`;
+/// - an unquoted `units` value is the constant `UnitsConst` role (REQ4).
+fn whole_arg_role(kind: &StatementKind, raw: &str) -> Option<Role> {
+    use Role as R;
     use StatementKind as K;
     if is_bare_number(raw) {
-        return Some((Class::Number, 0));
+        return Some(R::NumberLiteral);
     }
     if !is_unquoted_word(raw) {
         return None;
     }
     match kind {
-        K::Unknown(_) | K::IfFeature | K::Default | K::Argument | K::Namespace => {
-            Some((Class::Variable, 0))
-        }
-        K::Units => Some((Class::Variable, MOD_CONST)),
+        K::Unknown(_) => Some(R::VendorExtArg),
+        K::IfFeature | K::Default | K::Argument | K::Namespace => Some(R::WordArg),
+        K::Units => Some(R::UnitsConst),
         _ => None,
+    }
+}
+
+/// A parsed `netconf.semantic.<role>` value. Fields are `None` when the config
+/// did not mention them (the role's built-in value is kept).
+type ParsedOverride = (Option<Class>, Option<Vec<Modifier>>);
+
+/// Validate one `netconf.semantic.<role>` value.
+///
+/// Accepts the shorthand string form (`"enumMember"` — token only, modifiers
+/// untouched) or the full `{ "token", "modifiers" }` object form (either field
+/// optional; an empty `modifiers` array clears the role's modifiers). Returns
+/// `None` when a *present* field names an unknown token type or modifier — the
+/// whole override is then ignored and the role keeps its built-in
+/// classification.
+fn parse_override(value: &SemanticOverride) -> Option<ParsedOverride> {
+    match value {
+        SemanticOverride::Type(name) => Some((Some(Class::from_name(name)?), None)),
+        SemanticOverride::Fields(f) => {
+            let token = match &f.token {
+                Some(name) => Some(Class::from_name(name)?),
+                None => None,
+            };
+            let modifiers = match &f.modifiers {
+                None => None,
+                Some(list) => Some(
+                    list.iter()
+                        .map(|name| Modifier::from_name(name))
+                        .collect::<Option<Vec<Modifier>>>()?,
+                ),
+            };
+            Some((token, modifiers))
+        }
+    }
+}
+
+/// The effective per-role classification for one document, resolved from the
+/// `netconf.semantic` per-role struct. A role the config does not mention
+/// keeps its built-in `(class, modifier-bits)`; a mentioned role takes the
+/// configured token type and/or modifiers.
+#[derive(Debug, Clone)]
+pub(crate) struct Style {
+    emit: [Option<(Class, u32)>; Role::ALL.len()],
+}
+
+impl Default for Style {
+    fn default() -> Self {
+        Style::from_settings(&SemanticSettings::default())
+    }
+}
+
+impl Style {
+    /// Resolve the config into one emission per role. Called once per
+    /// `semantic_tokens_full` request (cheap) and never cached, so a
+    /// `didChangeConfiguration` takes effect on the next request with no
+    /// recompile and — because the legend announces the full standard token
+    /// type + modifier sets — no client restart.
+    fn from_settings(s: &SemanticSettings) -> Style {
+        let mut emit: [Option<(Class, u32)>; Role::ALL.len()] = std::array::from_fn(|_| None);
+        // Start from each role's built-in classification…
+        for (i, role) in Role::ALL.iter().enumerate() {
+            emit[i] = Some((role.default_class(), role.default_mods()));
+        }
+        // …then apply the configured members. Unknown role keys are ignored
+        // (future-proofing); a member whose token type / modifier is unknown is
+        // ignored too, leaving that role's built-in classification.
+        for (key, value) in &s.roles {
+            let Some(role) = Role::from_key(key) else {
+                continue;
+            };
+            let Some((token, modifiers)) = parse_override(value) else {
+                continue;
+            };
+            let (mut class, mut mods) = emit[role as usize].expect("role present");
+            if let Some(c) = token {
+                class = c;
+            }
+            if let Some(list) = modifiers {
+                mods = Modifier::bits(&list);
+            }
+            emit[role as usize] = Some((class, mods));
+        }
+        Style { emit }
+    }
+
+    /// Emission for a role: its configured (or built-in) class and modifier
+    /// bits. Always `Some` — a role always maps to a token type.
+    fn at(&self, role: Role) -> Option<(Class, u32)> {
+        self.emit[role as usize]
     }
 }
 
 /// Compute semantic tokens for a document.
 ///
 /// `root`/`tokens` are borrowed from the repository (hold its read-lock while
-/// calling); `rope` is the open-document buffer.
+/// calling); `rope` is the open-document buffer; `settings` is the active
+/// `netconf.semantic` configuration (a default value reproduces the historic
+/// classification exactly).
 pub(crate) fn handle(
     rope: &Rope,
     root: Option<&Statement>,
     tokens: &[Token],
+    settings: &SemanticSettings,
 ) -> Option<Vec<SemanticToken>> {
     let root = root?;
+    let style = Style::from_settings(settings);
+
+    // Declarations carrying a direct `status deprecated;` child are deprecated
+    // (always-on). Record their spans so every token of the declaration —
+    // keyword, name, the `status deprecated;` marker's own words, and every
+    // descendant — carries the standard `deprecated` modifier.
+    let mut deprecated: Vec<Range<usize>> = Vec::new();
+    for stmt in root.preorder() {
+        for child in &stmt.children {
+            if child.kind == StatementKind::Status
+                && child.arg.as_ref().is_some_and(|a| a.name() == "deprecated")
+            {
+                deprecated.push(stmt.range.clone());
+                break;
+            }
+        }
+    }
 
     let mut items: Vec<(Class, u32, Range<usize>)> = Vec::new();
     let mut composite: Vec<Range<usize>> = Vec::new();
@@ -293,18 +680,25 @@ pub(crate) fn handle(
             items.push((Class::Keyword, 0, kw.clone()));
         }
         if let Some(arg) = &stmt.arg {
-            match arg_semantics(&stmt.kind) {
-                ArgSemantics::Atomic(class) => items.push((class, 0, arg.range.clone())),
-                ArgSemantics::Composite => {
-                    let raw = rope
-                        .get_byte_slice(arg.range.clone())
-                        .map(|s| s.to_string())
-                        .unwrap_or_default();
-                    if let Some((class, mods)) = whole_arg(&stmt.kind, &raw) {
-                        items.push((class, mods, arg.range.clone()));
-                    } else {
-                        composite.push(arg.range.clone());
-                    }
+            if let Some(role) = role_of_kind(&stmt.kind) {
+                // Atomic whole-argument span (name / ref / verb / date / …).
+                if let Some((class, mods)) = style.at(role) {
+                    items.push((class, mods, arg.range.clone()));
+                }
+            } else {
+                // Composite argument: color the whole literal when it reads as
+                // one (number / unquoted word / units), else let the lexical
+                // pass color its inner literals.
+                let raw = rope
+                    .get_byte_slice(arg.range.clone())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                if let Some(role) = whole_arg_role(&stmt.kind, &raw)
+                    && let Some((class, mods)) = style.at(role)
+                {
+                    items.push((class, mods, arg.range.clone()));
+                } else {
+                    composite.push(arg.range.clone());
                 }
             }
         }
@@ -312,21 +706,24 @@ pub(crate) fn handle(
 
     // Pass 2 — lexical (grammar tokens).
     for token in tokens {
-        let class = match token.kind {
-            TokenKind::Comment => Class::Comment,
-            TokenKind::String => Class::String,
-            TokenKind::Number => Class::Number,
-            TokenKind::Boolean => Class::Keyword,
-            TokenKind::Operator => Class::Operator,
+        let role = match token.kind {
+            TokenKind::Comment => Role::Comment,
+            TokenKind::String => Role::StringLit,
+            TokenKind::Number => Role::NumberLit,
+            TokenKind::Boolean => Role::BooleanLit,
+            TokenKind::Operator => Role::OperatorLit,
             // Value words that read as keywords and live inside composite
             // argument spans (`status deprecated`, `ordered-by user`, `min`/
             // `max` in range/length) are lexed as keywords; color them only
             // there. Statement keywords sit *outside* composite args and are
             // already colored by pass 1, so the `inside(composite)` guard
             // below never double-colors them.
-            TokenKind::Keyword => Class::Keyword,
+            TokenKind::Keyword => Role::KeywordLit,
             // Identifiers/punct are covered by pass 1 (or uncolored).
             _ => continue,
+        };
+        let Some((class, mods)) = style.at(role) else {
+            continue;
         };
         // Comments, and booleans (`true`/`false` — quoted forms like
         // `config "false"` sit outside the composite span because the arg
@@ -334,7 +731,7 @@ pub(crate) fn handle(
         // other literals only inside composite argument spans.
         let standalone = matches!(token.kind, TokenKind::Comment | TokenKind::Boolean);
         if standalone || inside(&token.range, &composite) {
-            items.push((class, 0, token.range.clone()));
+            items.push((class, mods, token.range.clone()));
         }
     }
 
@@ -346,6 +743,19 @@ pub(crate) fn handle(
         if item.2.start >= end {
             end = item.2.end;
             kept.push(item);
+        }
+    }
+
+    // Always-on deprecation: OR the `deprecated` modifier into every kept token
+    // inside a deprecated declaration's span — including the `status
+    // deprecated;` marker's own words (see the note above).
+    if !deprecated.is_empty() {
+        let dep_bit = Modifier::Deprecated.bit();
+        for item in &mut kept {
+            let inside = |r: &Range<usize>| item.2.start >= r.start && item.2.end <= r.end;
+            if deprecated.iter().any(inside) {
+                item.1 |= dep_bit;
+            }
         }
     }
 
@@ -365,6 +775,8 @@ mod tests {
     use super::*;
     use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
+
+    use crate::config::SemanticOverrideFields;
 
     /// Decode the delta stream back to absolute `(line, utf16 col, length, type)`
     /// using the VS Code convention (start-to-start deltas on the same line).
@@ -392,7 +804,7 @@ mod tests {
         repo.compile();
         let root = repo.statement("u");
         let toks = repo.tokens("u").unwrap();
-        let out = handle(&rope, root, toks).expect("tokens");
+        let out = handle(&rope, root, toks, &SemanticSettings::default()).expect("tokens");
         let abs = decode(&out);
         (rope, abs)
     }
@@ -575,7 +987,7 @@ mod tests {
             };
 
             // Decoded semantic token byte ranges for this document.
-            let sem = match handle(rope, root_stmt, toks) {
+            let sem = match handle(rope, root_stmt, toks, &SemanticSettings::default()) {
                 Some(out) => {
                     let abs = decode(&out);
                     let mut v: Vec<Range<usize>> = abs
@@ -818,7 +1230,7 @@ mod tests {
         repo.compile();
         let root = repo.statement("f");
         let toks = repo.tokens("f").unwrap();
-        let out = handle(&rope, root, toks).expect("tokens");
+        let out = handle(&rope, root, toks, &SemanticSettings::default()).expect("tokens");
         let abs = decode(&out);
         (rope, abs)
     }
@@ -833,7 +1245,7 @@ mod tests {
         repo.compile();
         let root = repo.statement("f");
         let toks = repo.tokens("f").unwrap();
-        let out = handle(&rope, root, toks).expect("tokens");
+        let out = handle(&rope, root, toks, &SemanticSettings::default()).expect("tokens");
         let mut abs: Vec<(u32, u32, u32, u32, u32)> = Vec::with_capacity(out.len());
         let (mut line, mut col) = (0u32, 0u32);
         for t in &out {
@@ -1245,5 +1657,349 @@ mod tests {
             numbers.iter().all(|s| s != "-16"),
             "quoted range content should not become a number token: {numbers:?}"
         );
+    }
+
+    // --- Customization: per-role token type + modifiers ---------------------
+
+    /// Run [`handle`] over an inline module under an explicit
+    /// `netconf.semantic` configuration, keeping the raw encoded tokens.
+    fn run_settings(src: &str, settings: &SemanticSettings) -> (Rope, Vec<SemanticToken>) {
+        let rope = Rope::from_str(src);
+        let mut repo = yrepo::Repository::new();
+        repo.upsert(String::from("u"), src.to_string());
+        repo.compile();
+        let root = repo.statement("u");
+        let toks = repo.tokens("u").unwrap();
+        let out = handle(&rope, root, toks, settings).expect("tokens");
+        (rope, out)
+    }
+
+    /// Decoded absolute tokens under a given configuration.
+    fn tokens_for_settings(
+        src: &str,
+        settings: &SemanticSettings,
+    ) -> (Rope, Vec<(u32, u32, u32, u32)>) {
+        let (rope, out) = run_settings(src, settings);
+        let abs = decode(&out);
+        (rope, abs)
+    }
+
+    /// Decode keeping each token's modifier bitset.
+    fn decode_marked(out: &[SemanticToken]) -> Vec<(u32, u32, u32, u32, u32)> {
+        let mut abs = Vec::with_capacity(out.len());
+        let (mut line, mut col) = (0u32, 0u32);
+        for t in out {
+            if t.delta_line > 0 {
+                line += t.delta_line;
+                col = t.delta_start;
+            } else {
+                col += t.delta_start;
+            }
+            abs.push((line, col, t.length, t.token_type, t.token_modifiers_bitset));
+        }
+        abs
+    }
+
+    /// Texts of decoded tokens whose *type* is one of `classes`.
+    fn text_of_classes(
+        rope: &Rope,
+        abs: &[(u32, u32, u32, u32)],
+        classes: &[Class],
+    ) -> Vec<String> {
+        abs.iter()
+            .filter(|(_, _, _, t)| classes.iter().any(|c| *c as u32 == *t))
+            .map(|&(l, c, n, _)| seg_text(rope, l, c, n))
+            .collect()
+    }
+
+    /// Texts of tokens carrying any of the modifier bits in `mask`.
+    fn text_of_marked(rope: &Rope, out: &[SemanticToken], mask: u32) -> Vec<String> {
+        decode_marked(out)
+            .into_iter()
+            .filter(|(_, _, _, _, m)| m & mask != 0)
+            .map(|(l, c, n, _, _)| seg_text(rope, l, c, n))
+            .collect()
+    }
+
+    fn has_class(abs: &[(u32, u32, u32, u32)], class: Class) -> bool {
+        abs.iter().any(|(_, _, _, t)| *t == class as u32)
+    }
+
+    /// Settings built from role-key → override pairs (mirrors a
+    /// `netconf.semantic` object whose members are the roles).
+    fn semantic(pairs: &[(&str, SemanticOverride)]) -> SemanticSettings {
+        SemanticSettings {
+            roles: pairs
+                .iter()
+                .map(|(key, value)| ((*key).to_owned(), value.clone()))
+                .collect(),
+        }
+    }
+
+    /// Shorthand override value: only the token type.
+    fn role_type(name: &str) -> SemanticOverride {
+        SemanticOverride::Type(name.to_owned())
+    }
+
+    /// Full override value: token type (optional) + modifiers (optional).
+    fn role_fields(token: Option<&str>, modifiers: &[&str]) -> SemanticOverride {
+        SemanticOverride::Fields(SemanticOverrideFields {
+            token: token.map(str::to_owned),
+            modifiers: Some(modifiers.iter().map(|m| m.to_string()).collect()),
+        })
+    }
+
+    #[test]
+    fn roles_retarget_to_any_standard_type() {
+        let src = "module x {\n  yang-version 1.1;\n  namespace \"urn:x\";\n  prefix x;\n\
+            container c {\n    leaf e { type enumeration { enum up; } }\n    leaf n { type int8; }\n  }\n}\n";
+        // Every role is a member of the config object and any standard token
+        // type (the identical map to SemanticTokenType) is a legal value.
+        let settings = semantic(&[
+            ("moduleName", role_type("decorator")),
+            ("enumAndBitNames", role_type("enumMember")),
+            ("typeRef", role_type("class")),
+            ("dataNodeName", role_type("property")),
+        ]);
+        let (rope, abs) = tokens_for_settings(src, &settings);
+        let decorators = text_of_classes(&rope, &abs, &[Class::Decorator]);
+        assert!(
+            decorators.iter().any(|t| t == "x"),
+            "module name not decorator: {decorators:?}"
+        );
+        let enumed = text_of_classes(&rope, &abs, &[Class::EnumMember]);
+        assert!(
+            enumed.iter().any(|t| t == "up"),
+            "enum name not enumMember: {enumed:?}"
+        );
+        let classes = text_of_classes(&rope, &abs, &[Class::Class]);
+        for t in ["int8", "enumeration"] {
+            assert!(
+                classes.iter().any(|s| s == t),
+                "{t:?} not class-colored: {classes:?}"
+            );
+        }
+        let props = text_of_classes(&rope, &abs, &[Class::Property]);
+        for t in ["c", "e", "n"] {
+            assert!(
+                props.iter().any(|s| s == t),
+                "data node {t:?} not property: {props:?}"
+            );
+        }
+        // Roles we left out keep their built-in classification (keywords and
+        // quoted strings are still colored as such).
+        assert!(has_class(&abs, Class::Keyword), "unconfigured role changed");
+        assert!(has_class(&abs, Class::String), "unconfigured role changed");
+    }
+
+    #[test]
+    fn units_modifiers_follow_the_role_value() {
+        let src = "module x {\n  yang-version 1.1;\n  namespace \"urn:x\";\n  prefix x;\n\
+            leaf u { type string; units meters-second; }\n}\n";
+        // Built-in: units value is Variable + readonly (const proxy).
+        let (rope, out) = run_settings(src, &SemanticSettings::default());
+        assert!(
+            text_of_marked(&rope, &out, Modifier::Readonly.bit())
+                .iter()
+                .any(|t| t == "meters-second"),
+            "units not Variable+readonly by default"
+        );
+        // { "token": "string", "modifiers": [] } → a plain string, modifier off.
+        let settings = semantic(&[("units", role_fields(Some("string"), &[]))]);
+        let (rope, out) = run_settings(src, &settings);
+        let abs = decode(&out);
+        assert!(
+            text_of_classes(&rope, &abs, &[Class::String])
+                .iter()
+                .any(|t| t == "meters-second"),
+            "units value not string-colored after override"
+        );
+        assert!(
+            text_of_marked(&rope, &out, Modifier::Readonly.bit()).is_empty(),
+            "readonly modifier should drop when modifiers are cleared"
+        );
+        // Re-assert the constant look explicitly.
+        let settings = semantic(&[("units", role_fields(Some("variable"), &["readonly"]))]);
+        let (rope, out) = run_settings(src, &settings);
+        assert!(
+            text_of_marked(&rope, &out, Modifier::Readonly.bit())
+                .iter()
+                .any(|t| t == "meters-second"),
+            "explicit readonly modifier lost"
+        );
+        // Any standard modifier rides along, e.g. deprecated.
+        let settings = semantic(&[("units", role_fields(Some("variable"), &["deprecated"]))]);
+        let (rope, out) = run_settings(src, &settings);
+        assert!(
+            text_of_marked(&rope, &out, Modifier::Deprecated.bit())
+                .iter()
+                .any(|t| t == "meters-second"),
+            "deprecated modifier not applied"
+        );
+        assert!(
+            text_of_marked(&rope, &out, Modifier::Readonly.bit()).is_empty(),
+            "readonly should be replaced, not merged, when modifiers are set"
+        );
+    }
+
+    #[test]
+    fn unknown_roles_and_types_fall_back_to_builtins() {
+        let src = "module x {\n  yang-version 1.1;\n  namespace \"urn:x\";\n  prefix x;\n\
+            leaf u { type string; units meters-second; }\n}\n";
+        let settings = semantic(&[
+            ("notARole", role_type("enumMember")), // unknown member → ignored
+            ("units", role_type("notATokenType")), // unknown value → ignored
+        ]);
+        let (rope, out) = run_settings(src, &settings);
+        let abs = decode(&out);
+        // units keeps its built-in Variable + readonly classification.
+        assert!(
+            text_of_classes(&rope, &abs, &[Class::Variable])
+                .iter()
+                .any(|t| t == "meters-second")
+        );
+        assert!(
+            text_of_marked(&rope, &out, Modifier::Readonly.bit())
+                .iter()
+                .any(|t| t == "meters-second")
+        );
+        // And the bogus enumMember key changed nothing.
+        assert!(
+            !text_of_classes(&rope, &abs, &[Class::EnumMember])
+                .iter()
+                .any(|t| t == "x")
+        );
+    }
+
+    /// The announced legend is the full standard `SemanticTokenType` /
+    /// `SemanticTokenModifier` set, so a user can compose any classification
+    /// the semantic-highlight guide supports — no server restart needed.
+    #[test]
+    fn capability_announces_the_full_standard_legend() {
+        use tower_lsp_server::ls_types::SemanticTokensServerCapabilities as Cap;
+        let expected_types: Vec<String> = [
+            "namespace",
+            "type",
+            "class",
+            "enum",
+            "interface",
+            "struct",
+            "typeParameter",
+            "parameter",
+            "variable",
+            "property",
+            "enumMember",
+            "event",
+            "function",
+            "method",
+            "macro",
+            "keyword",
+            "modifier",
+            "comment",
+            "string",
+            "number",
+            "regexp",
+            "operator",
+            "decorator",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let expected_mods: Vec<String> = [
+            "declaration",
+            "definition",
+            "readonly",
+            "static",
+            "deprecated",
+            "abstract",
+            "async",
+            "modification",
+            "documentation",
+            "defaultLibrary",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        match capability() {
+            Cap::SemanticTokensOptions(opts) => {
+                let types: Vec<String> = opts
+                    .legend
+                    .token_types
+                    .iter()
+                    .map(|t| t.as_str().to_owned())
+                    .collect();
+                let mods: Vec<String> = opts
+                    .legend
+                    .token_modifiers
+                    .iter()
+                    .map(|t| t.as_str().to_owned())
+                    .collect();
+                assert_eq!(
+                    types, expected_types,
+                    "token types must be the full standard set"
+                );
+                assert_eq!(
+                    mods, expected_mods,
+                    "modifiers must be the full standard set"
+                );
+                assert_eq!(Class::ALL.len(), expected_types.len());
+                assert_eq!(Modifier::ALL.len(), expected_mods.len());
+            }
+            _ => panic!("unexpected semantic-tokens capability shape"),
+        }
+    }
+
+    #[test]
+    fn pattern_arguments_are_regexp_by_default() {
+        let src = "module x {\n  yang-version 1.1;\n  namespace \"urn:x\";\n  prefix x;\n\
+            leaf a { type string { pattern \"[0-9]+\"; } }\n}\n";
+        let (rope, abs) = tokens_for_settings(src, &SemanticSettings::default());
+        let regexps = text_of_classes(&rope, &abs, &[Class::Regexp]);
+        assert!(
+            regexps.iter().any(|t| t == "\"[0-9]+\""),
+            "pattern arg not regexp-colored by default: {regexps:?}"
+        );
+        // Overridable back to a plain string via the `patternArg` member.
+        let settings = semantic(&[("patternArg", role_type("string"))]);
+        let (rope, abs) = tokens_for_settings(src, &settings);
+        assert!(
+            text_of_classes(&rope, &abs, &[Class::Regexp]).is_empty(),
+            "patternArg → string should leave no regexp tokens"
+        );
+        assert!(
+            text_of_classes(&rope, &abs, &[Class::String])
+                .iter()
+                .any(|t| t == "\"[0-9]+\""),
+            "pattern arg not string-colored after patternArg override"
+        );
+    }
+
+    #[test]
+    fn status_deprecated_marks_the_declaration_subtree() {
+        let src = "module m {\n  yang-version 1.1;\n  namespace \"urn:x\";\n  prefix x;\n\
+            container c {\n    status deprecated;\n    leaf a { type string; }\n  }\n\
+            container d {\n    leaf b { type string; }\n  }\n}\n";
+        let (rope, out) = run_settings(src, &SemanticSettings::default());
+        let marked = text_of_marked(&rope, &out, Modifier::Deprecated.bit());
+        // The deprecated container's own name and its subtree leaf are marked…
+        for t in ["c", "a"] {
+            assert!(
+                marked.iter().any(|s| s == t),
+                "{t:?} not deprecated-marked: {marked:?}"
+            );
+        }
+        // …but not an unrelated sibling declaration…
+        assert!(
+            marked.iter().all(|s| s != "d" && s != "b"),
+            "sibling should not be deprecated-marked: {marked:?}"
+        );
+        // …and the `status deprecated;` marker words themselves are struck too
+        // (no marker exclusion).
+        for t in ["status", "deprecated"] {
+            assert!(
+                marked.iter().any(|s| s == t),
+                "{t:?} should be deprecated-marked: {marked:?}"
+            );
+        }
     }
 }

@@ -22,7 +22,7 @@ reading and writing **NETCONF / YANG** files.
 <p align="left">
 <b>🎯 Semantic Oriented</b> — 🧠 read with insight · ✍️ write with ease<br>
 <b>🦀 Native Rust</b> — 0️⃣ zero runtime · 🚀 just launch<br>
-<b>⚡ Blazing Fast</b> — 🚅 165k-file <a href="https://github.com/YangModels/yang">YangModels/yang</a> workspace ready in ~0.3 s (no whole-tree parse) · 📊 <a href="docs/benchmarks.md">benchmarks</a>
+<b>⚡ Blazing Fast</b> — 🚅 165k-file <a href="https://github.com/YangModels/yang">YangModels/yang</a> &lt;1 s startup, ~25 s lazy find-all-references (16-thread host) · 📊 <a href="docs/benchmarks.md">benchmarks</a>
 </p>
 
 ## Features

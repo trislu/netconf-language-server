@@ -12,7 +12,7 @@
 <p align="left">
 <b>🎯 Semantic Oriented</b> — 🧠 read with insight · ✍️ write with ease<br>
 <b>🦀 Native Rust</b> — 0️⃣ zero runtime · 🚀 just launch<br>
-<b>⚡ Blazing Fast</b> — 🚅 165k-file <a href="https://github.com/YangModels/yang">YangModels/yang</a> workspace ready in ~0.3 s (no whole-tree parse) · 📊 <a href="../../docs/benchmarks.md">benchmarks</a>
+<b>⚡ Blazing Fast</b> — 🚅 165k-file <a href="https://github.com/YangModels/yang">YangModels/yang</a> &lt;1 s startup, ~25 s lazy find-all-references (16-thread host) · 📊 <a href="../../docs/benchmarks.md">benchmarks</a>
 </p>
 
 ## Features
@@ -41,7 +41,7 @@
   <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/images/netconf-zed-jcomp-20260906.png" alt="JSON completion" width="720">
 </p>
 
-> For more details, see the [LSP features guide](../docs/features.md) in the repo.
+> For more details, see the [LSP features guide](../../docs/features.md) in the repo.
 
 ## Installation
 

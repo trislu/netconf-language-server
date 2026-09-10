@@ -1,6 +1,7 @@
 # Catalog-scan startup regression (giant workspace) — analysis report
 
 - **Date:** 2026-09-11
+- **Test data:** https://github.com/YangModels/yang (explicit corpus input; every run records file count + total bytes).
 - **Scope:** `netconf-language-server` startup (`fill_catalog`) over a 165 521-file /
   3.3 GB `.yang` tree; the `yrepo` catalog path it calls; the released Linux artifact.
 - **Status:** root-caused, reproduced, **fixed and verified locally** (P0+P1+P2 + harness items 1–3; no release yet).
@@ -69,7 +70,7 @@ python3 scripts/lsp_scan_driver.py "$BIN" "$CORPUS"
 Thread/CPU/RSS sampling during the scan (`scripts/lspsample.py`, §Appendix B):
 
 ```bash
-python3 scripts/lspsample.py "$BIN" "$CORPUS/vendor/cisco/nx"   # 9 797 files / 514 MB
+python3 scripts/lspsample.py "$BIN" "$CORPUS/<large vendor subtree>"   # 9 797 files / 514 MB
 # → threads=35  user=197.8s  sys=433.9s  (69 % sys)  RSS peak ≈ 1.7 GB
 ```
 
@@ -92,7 +93,7 @@ Recorded results:
 | --- | --- | --- |
 | sequential, full corpus | **177.1 s** (1.07 ms/file) | matches docs' 170 s / 218 s |
 | parallel, full corpus | **23.3 s** (7.59×), HWM 1 566 MB | matches the 23.5 s grid baseline |
-| sequential, `vendor/cisco/nx` (9 797 files / 490 MB) | 28.7 s | |
+| sequential, one large vendor subtree (9 797 files / 490 MB) | 28.7 s | |
 | parallel, same | **4.8 s (5.9×)**, HWM 2.72 GB | |
 
 ### 3.3 Grammar A/B (raw parse, no yrepo)
@@ -102,7 +103,7 @@ Recorded results:
 <harness> "$CORPUS" --skip 4600 --limit 4000   # slowest files reported
 ```
 
-| grammar | slowest Cisco NX-OS module |
+| grammar | slowest multi-MB vendor module |
 | --- | --- |
 | 0.3.0 | 57 ms — but `root=ERROR, has_error=true` (whole-file collapse) |
 | 0.4.0 | 141 ms |
@@ -115,10 +116,10 @@ Recorded results:
 | # | object | condition | result |
 | --- | --- | --- | --- |
 | 1 | shipped `0.3.0` binary (musl), full corpus | 165 521 files | **329.694 s**, 5 371 names |
-| 2 | same binary, `vendor/cisco/nx` | 9 797 files / 514 MB | **54.8 s**, 35 threads, **user 197.8 s / sys 433.9 s**, RSS ≈ 1.7 GB |
+| 2 | same binary, one large vendor subtree | 9 797 files / 514 MB | **54.8 s**, 35 threads, **user 197.8 s / sys 433.9 s**, RSS ≈ 1.7 GB |
 | 3 | glibc harness, same subtree | seq + par + par-canon | seq **28.7 s**, par **4.8 s (5.9×)**; `/usr/bin/time`: user 161.59 s / **sys 6.18 s** |
 | 4 | glibc harness, full corpus | yrepo 0.4.0 + grammar 0.4.1 | seq **177.1 s**, par **23.3 s (7.59×)** |
-| 5 | `Catalog::scan`, 5.9 MB Cisco NX module | yrepo 0.4.0 | **0.38–0.43 s** |
+| 5 | `Catalog::scan`, 5.9 MB vendor module | yrepo 0.4.0 | **0.38–0.43 s** |
 | 6 | `Catalog::scan`, same file | yrepo 0.5.0 (HEAD) | **4.6 s** (11×) |
 | 7 | raw parse, same file | grammar 0.3.0 / 0.4.0 / 0.4.1 | 0.068 s (`ERROR`) / 0.159 s / 0.159 s |
 | 8 | per-file URL mapping | 20 000 files, sequential | 0.072 s total (`canon`), 0.005 s (`Uri` only) |
@@ -161,10 +162,13 @@ Contributing, independent of the above:
 
 ### P0 — packaging (biggest lever, ~10×)
 
-- [x] Build the Linux artifact for **`x86_64-unknown-linux-gnu`** instead of
-      `x86_64-unknown-linux-musl` (`.github/workflows/github-release.yml`, `build-linux`).
-      If a fully static binary is required, keep musl but set a fast global allocator
-      (`mimalloc` / `jemalloc`) in `src/main.rs`.
+- [x] Keep the **static `x86_64-unknown-linux-musl`** artifact and install
+      **`mimalloc` with its `override` feature** (Rust global allocator + C-level
+      `malloc`/`free` interposition). `#[global_allocator]` alone was not enough:
+      the tree-sitter parser's C allocations still hit musl's allocator (22.1 s vs
+      1.9 s on a 9 797-file vendor subtree, 67 % sys). With `override`, static musl
+      ≈ glibc (12.2 s vs 11.8 s full scan, ~3 % sys) and no glibc version floor is
+      implied. `.github/workflows/github-release.yml` asserts the artifact is static.
 - [x] Add a **gnu vs musl** A/B job to CI (manual `perf-ab.yml` skeleton) (same scan, same corpus sample) and publish both
       timings, so this cannot silently regress.
 
@@ -223,7 +227,7 @@ These are the tools the next round should add so the fix is measurable and guard
 4. **Corpus manifest**: the corpus is an explicit input (workspace convention) — take it from
    `--corpus DIR` / `$YANG_CORPUS`; record file count + total bytes in every report so numbers
    stay comparable. Reference fixture used here: 165 521 files, 3 319 MB.
-5. **CI perf job**: `gnu` vs `musl` × `{seq, par}` over a fixed subtree (`vendor/cisco/nx`,
+5. **CI perf job**: `gnu` vs `musl` × `{seq, par}` over a fixed subtree (one large vendor subtree,
    9 797 files / 514 MB) with stored baselines; fail on regression.
 
 Reference harnesses used for this report (throwaway, under `/tmp`):
@@ -258,7 +262,7 @@ described in §3, corpus 165 521 files / 3 319 MiB.
 
 ### 9.1 Worst single file (same `scanbench` harness before/after)
 
-| `Catalog::scan`, `…/cisco/nx/10.6-4/Cisco-NX-OS-device.yang` (5.96 MB) | wall |
+| `Catalog::scan`, largest vendor module (5.96 MB) | wall |
 | --- | --- |
 | pre-fix HEAD (stash, same harness) | **4.966 s** |
 | post-fix | **0.187 s** |
@@ -295,12 +299,24 @@ t=12.8s threads=35 user=192.9s sys=7.2s rss=450 MB
 End-to-end **13.0 s** (was 330–366 s) and **3.6 % sys** (was 69 %) — both
 acceptance criteria met with large margin.
 
+Allocator / libc follow-up (same subtree, 9 797 files; and full corpus):
+
+| build | subtree wall | full scan | sys (full) |
+| --- | --- | --- | --- |
+| glibc, mimalloc as Rust allocator only | 2.44 s | 11.8–14.6 s | ~3 % |
+| static musl, mimalloc as Rust allocator only | 22.06 s | — | 67 % |
+| glibc, mimalloc `override` | 1.94 s | 11.8 s | ~3 % |
+| **static musl, mimalloc `override` (shipped)** | **1.93 s** | **12.18 s** | **3.5 %** |
+
+**Decision:** ship the static musl artifact with mimalloc `override` — glibc-level
+performance with no glibc version floor, so the portable artifact is kept.
+
 ### 9.4 Acceptance status
 
 | metric | before | target | measured |
 | --- | --- | --- | --- |
-| full-corpus catalog scan, shipped artifact | 330–366 s | ≤60 s | **13.0 s** |
-| sys share during the scan | 69 % | <30 % | **3.6 %** |
+| full-corpus catalog scan, shipped artifact (static musl + mimalloc override) | 330–366 s | ≤60 s | **12.2 s** |
+| sys share during the scan | 69 % | <30 % | **3.5 %** |
 | worst single-file `Catalog::scan` (≤6 MB) | 4.97 s | ≤0.45 s | **0.19 s** (stretch 0.10 not met: parse-bound) |
 | parallel speedup (library) | 1.9× effective | ≥5× | **7.7×** |
 

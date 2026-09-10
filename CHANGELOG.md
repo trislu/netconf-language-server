@@ -9,12 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Linux release artifact is now a glibc (`x86_64-unknown-linux-gnu`) build,
-  and all Linux builds use `mimalloc` as the global allocator.** The catalog
-  scan allocates one owned string per CST leaf; the previous static musl build
-  turned that churn into a syscall storm (~10x wall time, ~69% sys CPU on a
-  multi-MB subtree). CI keeps a `file`/`ldd` guard so a static musl binary
-  cannot be shipped by accident. See
+- **Linux releases stay static-musl and now use `mimalloc` with its `override`
+  feature.** The catalog scan is allocation-heavy and the previous static musl
+  build spent ~69% of its CPU in the kernel on allocator syscalls (~10x wall
+  time). Installing mimalloc as the Rust global allocator alone was not enough:
+  the tree-sitter parser's C-level `malloc`/`free` calls still hit musl's
+  allocator, so `override` also interposes the C symbols. A/B over the giant
+  workspace (external corpus, counts recorded per run) shows static
+  musl+override ≈ glibc (~12 s full scan, ~3% sys), so the portable static
+  artifact is kept instead of moving to a glibc build with an implied glibc
+  version floor. CI asserts the artifact is static. See
   `docs/perf/catalog-scan-regression-2026-09-11.md`.
 
 ### Added

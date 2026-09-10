@@ -9,7 +9,7 @@
 #
 # Deliberately workflow_dispatch-only, and deliberately not wired into
 # push/pull_request: the reference fixture is the external YangModels corpus
-# (a `vendor/cisco/nx` subtree alone is ~514 MB), which CI must not check out or
+# (a large vendor subtree alone can be hundreds of MB), which CI must not check out or
 # require. When a stored baseline + regression threshold exist (report section 6
 # P3), promote this skeleton into a gated job with a pinned corpus cache.
 name: Perf A/B (gnu vs musl, manual)

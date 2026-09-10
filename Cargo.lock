@@ -1065,9 +1065,9 @@ checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 
 [[package]]
 name = "yrepo"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36944224d8ffad23d2620528104e51a5a9c1111d92d4ac278196e37591036822"
+checksum = "9de3820d7d8dc516d1dd6a81e516362ed14ac193e3e7d299964848e13c2a2d64"
 dependencies = [
  "rayon",
  "tree-sitter",

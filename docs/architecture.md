@@ -289,7 +289,7 @@ struct Snapshot {           // immutable compile result, cached by generation
 4. **Serving trade-off**: diagnostics and cross-file features are computed over
    the open closure. Modules that exist on disk but are not reachable from any
    open buffer (e.g. augments whose source module nobody imported) do not
-   appear — matching what an editor needs; the whole-tree scan it replaces is
+   appear — matching what an editor needs; the whole-tree startup scan it replaces is
    gone by design.
 
 **Ordering.** Handlers mutate shared, cross-document state (open set,
@@ -360,7 +360,7 @@ Circular-import reporting moved into `yrepo` (`ImportCycle`, D6); duplicate-sibl
 > **Q6 — "RFC allows some cycles"?** Correction: **RFC 7950 (YANG 1.1) §5.1 forbids them**: *"There MUST NOT be any circular chains of imports. For example, if module "a" imports module "b", "b" cannot import "a"."* My earlier note was wrong. The reason `yrepo` used to "compile" A↔B silently is mechanical: an `import` is a `prefix → module` mapping and name resolution is a lookup (never recursive expansion), so a cycle neither hangs nor confuses it — which is why it was never reported. That is now fixed: `yrepo` walks the module graph and emits `ImportCycle` (error) on the offending import. Include cycles were already errors (`IncludeCycle`). No structural quick-fix exists — the author must drop or redirect an import.
 
 **[DONE D7]** Delivery model: **pull diagnostics** (`textDocument/diagnostic`).
-`Server::diagnostic` first awaits the one-time workspace scan (§6.1), then serves
+`Server::diagnostic` first awaits the one-time startup index (§6.1), then serves
 from the `snapshot()` cache with `result_id` = compile generation. yrepo
 `Diagnostic`s are filtered per `url` and converted with that doc's rope (byte →
 UTF-16 `Range`, `severity`, stable string `code` from `DiagnosticCode::as_str()`,
@@ -554,7 +554,7 @@ selection range points at the exact `defining` span, with `origin_selection_rang
 set to the source argument span. Builtin `type` names are skipped. Unit tests in
 `goto.rs` cover extension-usage and `if-feature`/`default` jumps.
 
-Cross-file targets that are **not open** must still be resolvable → they must be present in the repository (§6.1 workspace scanning).
+Cross-file targets that are **not open** must still be resolvable → they must be present in the repository (§6.1 lazy catalog / open closure).
 
 ### 8.5 Hover — `textDocument/hover` (implemented — `src/hover.rs`)
 
@@ -586,7 +586,7 @@ Unit tests in `hover.rs` cover extension usage and `if-feature`/`default` hovers
 ### 8.6 Diagnostic / Action (implemented — `src/diagnostic.rs`)
 
 See §7. `diagnostic.rs` implements the pull handler: `Server::diagnostic` awaits
-the one-time workspace scan, takes the `snapshot()` (holding the current
+the startup index, takes the `snapshot()` (holding the current
 `Arc<Library>` + `Outcome.diagnostics` — no `spawn_blocking`; compile runs under
 the repo read-lock on a cache miss), converts that document's diagnostics
 (`convert`, filtered by `url`) with its rope, and appends the LS-side
@@ -692,7 +692,7 @@ own module behind a `capability()` + `handle(…)` shape and is dispatched from
 | 3 | Semantic tokens | `semantic_token.rs` | two passes + delta encode + corpus guard |
 | 4 | Folding | `fold.rs` | statement `{…}` region folds |
 | 5 | Formatting | `format.rs` | regenerate + splice comments, parse guards |
-| 6 | Diagnostics | `diagnostic.rs` + `workspace.rs` | pull + `refresh`, workspace scan, conflict-prefix |
+| 6 | Diagnostics | `diagnostic.rs` + `workspace.rs` | pull + `refresh`, startup index + lazy closure, conflict-prefix |
 | 7 | Goto / Hover | `goto.rs`/`hover.rs` | against the §6.1 `Library` snapshot |
 | 8 | Completion | `completion.rs` | `type` / identity `base` args |
 | 9 | VS Code client & tooling | `clients/vscode`, `.vscode/*` | F5 extension debugging (yrepo audit/perf tools now live in `yrepo/examples/`) |

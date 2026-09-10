@@ -112,12 +112,12 @@ progress-visible, unchanged. Startup must not build either index.
 
 ## 5. Implementation steps
 
-1. yrepo: add the lazy resolution helper (candidate subset → parallel header
+1. **[done]** yrepo: add the lazy resolution helper (candidate subset → parallel header
    scan → winner via `resolve`), with tests (pin, highest-revision,
    parse-clean-tie, zero-candidate).
-2. LS: replace `ensure_scanned()` in `initialize` with the basename index;
+2. **[done]** LS: replace `ensure_scanned()` in `initialize` with the basename index;
    make `sync_open_closure` resolve lazily and grow the catalog; keep
    `ensure_refidx` untouched; add the background fallback scan.
-3. Harness/logs + the correctness A/B sample; then measure startup and
+3. **[done]** Harness/logs + the correctness A/B sample; then measure startup and
    closure-resolution latency on the corpus.
 4. Docs/CHANGELOG; commits per repo.

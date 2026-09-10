@@ -7,14 +7,18 @@ ingest; a 163k-file full compile cannot fit one process).
 
 ## Behavior now
 
-The workspace is indexed **header-only** (`fill_catalog`: `Catalog::scan` per
-file, ~7 KB/file, no full parses) and the yrepo `Repository` holds only the
-**open closure** — open buffers (full parse) plus every on-disk module they
-can reach through the catalog (imports/includes with revision-date pins,
-belongs-to parents), parsed text-light (`sync_open_closure`). `snapshot()`
-compiles that repository, so both retention and compile cost scale with what
-the user is looking at, not the tree. See `architecture.md` §6.1 for the flow
-and the closure.rs helpers.
+Startup builds only a **parse-free basename index** (`build_startup_index`:
+walk + `NameIndex`) and an empty catalog — **no header is parsed** (0.27–0.29 s
+on the 165k-file corpus; see `benchmarks.md`). Header parsing is deferred to the
+open closure: `sync_open_closure` resolves names on demand from their candidate
+files (`resolve` over the needed name's candidates, bounded and cached, with a
+bounded prefix fallback), and the yrepo `Repository` holds only the **open
+closure** — open buffers (full parse) plus every on-disk module they can reach
+(imports/includes with revision-date pins, belongs-to parents), parsed
+text-light. `snapshot()` compiles that repository, so both retention and compile
+cost scale with what the user is looking at, not the tree. Whole-tree work stays
+lazy (`ReferenceIndex`, with progress). See `architecture.md` §6.1 and
+`design-lazy-startup-catalog.md`.
 
 ## Target serving model
 
@@ -69,7 +73,7 @@ A. yrepo: catalog registry with (name, rev) canonicalization + import/include
    (`build_closure_repository`; `examples/closure.rs` runs it). **DONE**
    (yrepo commits: header-only `Catalog`/`Catalog::scan`, `CatalogIndex`,
    pinned `resolve`, text-light parse mode).
-B. LS: `fill_catalog` + `sync_open_closure` replace the whole-tree scan;
+B. LS: `build_startup_index` + lazy `sync_open_closure` replace the whole-tree startup scan;
    `snapshot()` compiles the open-closure Repository; the feature unit tests
    stay green (regression gate). **DONE** (this repo: `closure.rs`, `server.rs`
    sync paths). Open buffers parse full; closure members parse text-light.

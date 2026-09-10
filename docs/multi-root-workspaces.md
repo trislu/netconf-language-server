@@ -25,7 +25,7 @@ server is architected around a single workspace root.
 - **Server** (`src/server.rs`):
   - `Server.root_uri: OnceLock<Uri>` — exactly one root (lines ~60/89),
     set from `InitializeParams.root_uri` (~748);
-  - `ensure_scanned` / `fill_catalog` walk one root (`~461/560`);
+  - `ensure_startup_index` / `build_startup_index` walk one root (`~461/560`);
   - `ensure_refidx` (whole-tree `ReferenceIndex`) walks the one root (~504);
   - configuration is fetched for the single root scope (~798).
 - **Workspace helpers** (`src/workspace.rs`): `walk_yang_files(root)` walks one
@@ -56,7 +56,7 @@ server is architected around a single workspace root.
 | Client (vscode) | Remove multi-workspace guard; build doc selectors from the folder list (keep xml/json scoped *per folder*); pass `workspaceFolders` | ~0.5–1 day |
 | Server state | Replace `root_uri: OnceLock` with a `Vec` of canonical folder URIs read from `InitializeParams.workspace_folders` (fallback `root_uri`); single init guard | ~0.5 day |
 | Workspace walking | `workspace::walk_yang_files` → walk N roots with canonical-url dedupe (nested/overlapping roots) | ~0.5 day |
-| Catalog + ReferenceIndex | `fill_catalog`/`ensure_refidx` over all roots; confirm import resolution and duplicate-name semantics; progress shows root count | ~1 day |
+| Catalog + ReferenceIndex | `build_startup_index`/`ensure_refidx` over all roots; confirm import resolution and duplicate-name semantics; progress shows root count | ~1 day |
 | Config scoping | Fetch `netconf.*` per folder (or unscoped) at `initialized`; formatting uses the owning root's `indentSize` | ~0.5–1 day |
 | Tests + docs | Multi-root fixtures (cross-folder goto/hover/diagnostics/find-references/rename; duplicate-name case); architecture/features/CHANGELOG notes | ~1 day |
 
@@ -109,7 +109,7 @@ semantics decisions.
 - `clients/vscode/src/extension.ts` — workspace guard (lines ~55–64),
   per-root doc selectors (~64–82).
 - `src/server.rs` — `root_uri` field/init (60/89), `initialize` (748),
-  `ensure_scanned`/`fill_catalog` (461/560), `ensure_refidx` (504),
+  `ensure_startup_index`/`build_startup_index` (lazy startup index), `ensure_refidx` (504),
   config fetch (798).
 - `src/workspace.rs` — `walk_yang_files` and url/path helpers.
 - `docs/serving-large-trees.md` — catalog + open-closure + reference-index model.

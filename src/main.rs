@@ -15,6 +15,7 @@ mod fold;
 mod format;
 mod goto;
 mod hover;
+mod incomplete;
 mod inst;
 mod inst_map;
 mod jcomp;

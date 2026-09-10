@@ -16,10 +16,9 @@
 use tower_lsp_server::ls_types::{CompletionItem, CompletionItemKind, InsertTextFormat};
 use yrepo::{Library, NodeKind};
 
-use crate::inst::NETCONF_BASE_NS;
+use crate::inst::{ModuleInfo, NETCONF_BASE_NS};
 use crate::inst_map::{Resolved, map_doc};
 use crate::valcheck::{self, DefaultValue};
-use crate::xml::parse;
 
 /// One completable child data node.
 struct Child {
@@ -125,17 +124,7 @@ fn children_all_modules(lib: &Library) -> Vec<Child> {
 /// Module RPC/notification operations plus the built-in NETCONF operations
 /// (for under `<rpc>`), sorted by name.
 fn children_ops(lib: &Library) -> Vec<Child> {
-    let mut out: Vec<Child> = NETCONF_OPS
-        .iter()
-        .map(|name| Child {
-            name: name.to_string(),
-            kind: NodeKind::Rpc,
-            ns: Some(NETCONF_BASE_NS.to_owned()),
-            keys: Vec::new(),
-            mandatory: false,
-            default: None,
-        })
-        .collect();
+    let mut out: Vec<Child> = children_netconf_ops();
     for m in lib.modules() {
         for &id in m.top_nodes() {
             if let Some(n) = m.node(id)
@@ -153,6 +142,42 @@ fn children_ops(lib: &Library) -> Vec<Child> {
         }
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}
+
+/// The built-in NETCONF operations (RFC 6241) as completion children.
+fn children_netconf_ops() -> Vec<Child> {
+    NETCONF_OPS
+        .iter()
+        .map(|name| Child {
+            name: name.to_string(),
+            kind: NodeKind::Rpc,
+            ns: Some(NETCONF_BASE_NS.to_owned()),
+            keys: Vec::new(),
+            mandatory: false,
+            default: None,
+        })
+        .collect()
+}
+
+/// Top-level data roots of every summarized module (Tier-1 fallback). A
+/// summary carries only names, so each root is offered with the generic
+/// container snippet — its real kind/keys/defaults need the compiled schema
+/// (Tier 2).
+fn children_data_roots_summaries(modules: &[ModuleInfo]) -> Vec<Child> {
+    let mut out = Vec::new();
+    for m in modules {
+        for name in &m.top_data {
+            out.push(Child {
+                name: name.clone(),
+                kind: NodeKind::Container,
+                ns: Some(m.namespace.clone()),
+                keys: Vec::new(),
+                mandatory: false,
+                default: None,
+            });
+        }
+    }
     out
 }
 
@@ -246,7 +271,7 @@ fn item(child: &Child, parent_ns: Option<&str>, after_open: bool) -> CompletionI
 /// Returns an empty list when completion does not apply (dormant docs,
 /// leaf content, attributes, …).
 pub fn handle(text: &str, byte: usize, lib: &Library) -> Vec<CompletionItem> {
-    let Some(doc) = parse(text) else {
+    let Some(doc) = crate::incomplete::tolerant_xml(text) else {
         return Vec::new();
     };
     let bytes = text.as_bytes();
@@ -280,6 +305,47 @@ pub fn handle(text: &str, byte: usize, lib: &Library) -> Vec<CompletionItem> {
     let Some(children) = children else {
         return Vec::new();
     };
+    let parent_ns = p.ns.as_deref();
+    children
+        .iter()
+        .map(|c| item(c, parent_ns, after_open))
+        .collect()
+}
+
+/// Tier-1 completion items at `byte` from the module summaries only (no
+/// compiled schema): the NETCONF operations plus every module's top-level data
+/// roots.
+///
+/// Offered only at the **root position** — the caret's parent is the document
+/// root element in the NETCONF base namespace (`<rpc>`, `<config>`, `<data>`
+/// or `<filter>`). A nested position needs a compiled schema, so it returns
+/// nothing (Tier 2 handles it once a `Library` exists).
+pub fn handle_summaries(text: &str, byte: usize, modules: &[ModuleInfo]) -> Vec<CompletionItem> {
+    let Some(doc) = crate::incomplete::tolerant_xml(text) else {
+        return Vec::new();
+    };
+    let bytes = text.as_bytes();
+    let after_open = byte > 0 && bytes.get(byte - 1) == Some(&b'<');
+    let probe = if after_open {
+        byte.saturating_sub(2)
+    } else {
+        byte
+    };
+    let Some(parent) = doc.element_at(probe) else {
+        return Vec::new();
+    };
+    let p = &doc.nodes[parent];
+    // Root position only: the parent must be the document's root element and a
+    // NETCONF wrapper. Anything deeper is a nested slot.
+    if p.parent.is_some()
+        || p.ns.as_deref() != Some(NETCONF_BASE_NS)
+        || !matches!(p.local.as_str(), "rpc" | "config" | "data" | "filter")
+    {
+        return Vec::new();
+    }
+    let mut children = children_netconf_ops();
+    children.extend(children_data_roots_summaries(modules));
+    children.sort_by(|a, b| a.name.cmp(&b.name));
     let parent_ns = p.ns.as_deref();
     children
         .iter()
@@ -441,5 +507,76 @@ mod tests {
         assert_eq!(insert("note"), "<note>$0</note>");
         // union → no typed default.
         assert_eq!(insert("many"), "<many>$0</many>");
+    }
+
+    fn summaries() -> Vec<ModuleInfo> {
+        vec![
+            ModuleInfo {
+                name: "m".to_owned(),
+                namespace: "urn:m".to_owned(),
+                top_data: vec!["system".to_owned(), "flag".to_owned()],
+            },
+            ModuleInfo {
+                name: "other".to_owned(),
+                namespace: "urn:other".to_owned(),
+                top_data: vec!["box".to_owned()],
+            },
+        ]
+    }
+
+    #[test]
+    fn summaries_root_completion_offers_data_roots_and_netconf_ops() {
+        let mods = summaries();
+        for root in ["rpc", "config"] {
+            let text = format!(
+                "<{root} xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">\n  |\n</{root}>"
+            );
+            let byte = marker_byte(&text);
+            let got = labels(&handle_summaries(&text, byte, &mods));
+            assert!(got.contains(&"system".to_owned()), "{root}: {got:?}");
+            assert!(got.contains(&"flag".to_owned()), "{root}: {got:?}");
+            assert!(got.contains(&"box".to_owned()), "{root}: {got:?}");
+            assert!(got.contains(&"get-config".to_owned()), "{root}: {got:?}");
+        }
+        // A data root from another module declares its own namespace.
+        let text = r#"<rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+  |
+</rpc>"#;
+        let byte = marker_byte(text);
+        let items = handle_summaries(text, byte, &mods);
+        let system = items.iter().find(|c| c.label == "system").expect("system");
+        assert!(
+            system
+                .insert_text
+                .as_deref()
+                .unwrap_or("")
+                .contains("xmlns=\"urn:m\""),
+            "{:?}",
+            system.insert_text
+        );
+    }
+
+    #[test]
+    fn summaries_root_completion_is_empty_for_nested_and_non_netconf_roots() {
+        let mods = summaries();
+        let nested = r#"<config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+  <system>
+    |
+  </system>
+</config>"#;
+        let byte = marker_byte(nested);
+        assert!(
+            handle_summaries(nested, byte, &mods).is_empty(),
+            "nested slot needs a compiled schema"
+        );
+        let data_root = r#"<interfaces xmlns="urn:m">
+  |
+</interfaces>"#;
+        let byte = marker_byte(data_root);
+        assert!(
+            handle_summaries(data_root, byte, &mods).is_empty(),
+            "a data-tree root has no root-position data slots"
+        );
+        assert!(handle_summaries("not xml", 0, &mods).is_empty());
     }
 }

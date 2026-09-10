@@ -1,6 +1,6 @@
 # Lazy schema for instance documents (design)
 
-Status: implementing (2026-09-11). Goal: editing NETCONF instance documents
+Status: implemented (2026-09-11); yrepo 0.7.1 released, LS 0.7.0 in release. Goal: editing NETCONF instance documents
 (XML/RPC, RFC 7951 JSON) must work on a giant workspace **with no YANG file
 open**, without paying a whole-tree reference index (that stays lazy and is
 never triggered here).
@@ -46,9 +46,17 @@ snapshot, and serve diagnostics/hover/goto/nested completion with the existing
 - YANG-only actions never touch the summary index or `ReferenceIndex` beyond
   their existing paths.
 
-## Measurements to record (acceptance)
+## Measured (release build, external corpus 165 521 files, by URL)
 
-Summary scan wall + VmHWM on the external corpus (165 521 files, by URL);
-first vs second root-completion latency; Tier-2 closure materialization latency
-and diagnostics on a real module; confirmation that find-all-references still
-triggers only `ReferenceIndex`.
+| metric | measured |
+| --- | --- |
+| Tier-1 summary scan (first instance completion) | 12.05 s, 165 521 modules; server RSS 51 → 481 MB |
+| XML root completion, first → second (`rpc`/`config` + `<`) | 13.38 s → 0.41 s, 79 371 items (cached) |
+| JSON root completion (`{"`) | 0.39 s, 79 362 items |
+| Tier-2 per-module closure (real `ietf-interfaces` doc) | 406 candidate headers / 17.7 ms; diagnostics 0.24 s |
+| classify | `DataTree("ietf-interfaces")` (was `NotNetconf`) |
+| find-all-references during instance work | **not triggered** (summary/instance paths never call `ensure_refidx`) |
+
+In-progress text is tolerated: XML ending in a lone `<` and JSON ending in a
+lone `"` both repair to a parseable document (`src/incomplete.rs`) before the
+root completion runs.

@@ -20,8 +20,9 @@
 use tower_lsp_server::ls_types::{CompletionItem, CompletionItemKind, InsertTextFormat};
 use yrepo::{Library, NodeKind};
 
+use crate::inst::ModuleInfo;
 use crate::jmap;
-use crate::json::{JsonDoc, JsonVal, parse};
+use crate::json::{JsonDoc, JsonVal};
 use crate::valcheck::{self, DefaultValue};
 
 /// One completable member.
@@ -217,7 +218,7 @@ fn containing_member(doc: &JsonDoc, obj: usize) -> Option<usize> {
 /// (ignoring whitespace), inside an object. Returns an empty list for dormant
 /// documents, leaf content, and member-value positions.
 pub fn handle(text: &str, byte: usize, lib: &Library) -> Vec<CompletionItem> {
-    let Some(doc) = parse(text) else {
+    let Some(doc) = crate::incomplete::tolerant_json(text) else {
         return Vec::new();
     };
     // A fresh member slot is preceded (ignoring whitespace) by `{` or `,`.
@@ -264,6 +265,87 @@ pub fn handle(text: &str, byte: usize, lib: &Library) -> Vec<CompletionItem> {
     child_candidates(lib, &res.module, res.id, def)
         .into_iter()
         .map(|c| item(&c))
+        .collect()
+}
+
+/// Every summarized module's top-level data node, module-qualified (Tier-1
+/// fallback). A summary carries only names, so each root is offered with the
+/// generic container snippet — its real kind needs the compiled schema.
+fn top_candidates_summaries(modules: &[ModuleInfo]) -> Vec<Candidate> {
+    let mut out = Vec::new();
+    for m in modules {
+        for name in &m.top_data {
+            out.push(Candidate {
+                qname: format!("{}:{}", m.name, name),
+                kind: NodeKind::Container,
+                keys: Vec::new(),
+                mandatory: false,
+                default: None,
+                quoted_placeholder: false,
+            });
+        }
+    }
+    out.sort_by(|a, b| a.qname.cmp(&b.qname));
+    out
+}
+
+/// Tier-1 completion items at `byte` from the module summaries only (no
+/// compiled schema).
+///
+/// Offered at a fresh member slot of the **root object** (an empty root
+/// counts, as does one whose members match a summarized data root; a dormant
+/// root stays silent): every summarized module's top-level data node,
+/// module-qualified. A nested object needs a compiled schema, so it returns
+/// nothing (Tier 2 handles it once a `Library` exists).
+pub fn handle_summaries(text: &str, byte: usize, modules: &[ModuleInfo]) -> Vec<CompletionItem> {
+    let Some(doc) = crate::incomplete::tolerant_json(text) else {
+        return Vec::new();
+    };
+    // Two in-progress root positions: a fresh member slot (preceded by `{` or
+    // `,`) or a member name just started (preceded by the opening `"` the
+    // editor inserted when the user typed it).
+    let bytes = text.as_bytes();
+    let mut p = byte;
+    while p > 0 && bytes[p - 1].is_ascii_whitespace() {
+        p -= 1;
+    }
+    let in_name = p > 0 && bytes[p - 1] == b'"';
+    let slot = p > 0 && (bytes[p - 1] == b'{' || bytes[p - 1] == b',');
+    if !slot && !in_name {
+        return Vec::new();
+    }
+    let Some(obj) = enclosing_object(&doc, byte) else {
+        return Vec::new();
+    };
+    if obj != doc.root {
+        return Vec::new();
+    }
+    let root_obj = &doc.objects[doc.root];
+    let recognized = root_obj.members.is_empty()
+        || root_obj.members.iter().any(|&m| {
+            let mem = &doc.members[m];
+            let Some(module) = mem.module.as_deref() else {
+                return false;
+            };
+            modules
+                .iter()
+                .any(|s| s.name == module && s.top_data.iter().any(|t| t == &mem.local))
+        });
+    if !recognized {
+        return Vec::new();
+    }
+    top_candidates_summaries(modules)
+        .into_iter()
+        .map(|c| {
+            let mut it = item(&c);
+            if in_name {
+                // The opening quote is already in the document; complete just
+                // the qualified member name.
+                it.insert_text = Some(c.qname.clone());
+                it.insert_text_format = Some(InsertTextFormat::PLAIN_TEXT);
+            }
+            it
+        })
         .collect()
 }
 
@@ -440,5 +522,58 @@ mod tests {
         assert_eq!(insert("note"), "\"note\": \"$0\"");
         // union → no typed default (neutral stub).
         assert_eq!(insert("many"), "\"many\": ");
+    }
+
+    fn summaries() -> Vec<ModuleInfo> {
+        vec![
+            ModuleInfo {
+                name: "m".to_owned(),
+                namespace: "urn:m".to_owned(),
+                top_data: vec!["system".to_owned(), "flag".to_owned()],
+            },
+            ModuleInfo {
+                name: "other".to_owned(),
+                namespace: "urn:other".to_owned(),
+                top_data: vec!["box".to_owned()],
+            },
+        ]
+    }
+
+    #[test]
+    fn summaries_root_object_offers_qualified_data_roots() {
+        let mods = summaries();
+        // A fresh (empty) root object offers every summarized data root.
+        let (text, byte) = caret("{\n  |\n}");
+        let items = handle_summaries(&text, byte, &mods);
+        let got = labels(&items);
+        assert!(got.contains(&"m:system".to_owned()), "{got:?}");
+        assert!(got.contains(&"m:flag".to_owned()), "{got:?}");
+        assert!(got.contains(&"other:box".to_owned()), "{got:?}");
+        let sys = items.iter().find(|c| c.label == "m:system").unwrap();
+        assert!(
+            sys.insert_text
+                .as_deref()
+                .unwrap_or("")
+                .starts_with("\"m:system\":"),
+            "{:?}",
+            sys.insert_text
+        );
+        // A root with a recognized member counts too (continuing a document).
+        let (text, byte) = caret("{\n  \"m:system\": {},\n  |\n}");
+        assert!(labels(&handle_summaries(&text, byte, &mods)).contains(&"m:system".to_owned()));
+    }
+
+    #[test]
+    fn summaries_nested_and_dormant_positions_stay_empty() {
+        let mods = summaries();
+        // Nested object needs a compiled schema.
+        let (text, byte) = caret("{\n  \"m:system\": {\n    |\n  }\n}");
+        assert!(handle_summaries(&text, byte, &mods).is_empty());
+        // A root whose members match no summary stays dormant.
+        let (text, byte) = caret("{\n  \"zz:thing\": 1,\n  |\n}");
+        assert!(handle_summaries(&text, byte, &mods).is_empty());
+        // Not a fresh member slot.
+        let (text, byte) = caret("{\n  \"m:system\": {} |\n}");
+        assert!(handle_summaries(&text, byte, &mods).is_empty());
     }
 }

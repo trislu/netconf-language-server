@@ -27,7 +27,7 @@ tree-sitter = "0.26"
 tree-sitter-xml = "0.7"
 tree-sitter-json = "0.24"
 
-yrepo = { version = "0.6.0", features = ["parallel"] }
+yrepo = { version = "0.7.1", features = ["parallel"] }
 
 # Linux ships two flavors of the same server (gnu and musl). The catalog scan
 # allocates one owned `String` per CST leaf, and the default musl allocator turns

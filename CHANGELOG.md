@@ -27,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Lazy schema for instance documents on giant workspaces**: with no YANG file
+  open, typing `<` in XML or `"` in a root JSON object now offers data roots
+  from a cached, progress-visible parse-level module-summary index
+  (`SummaryIndex`; first use scans the tree once, later uses are cached), and
+  diagnostics/hover/goto materialize only the document's own module closure.
+  In-progress text (a lone `<` or `"`) is tolerated. `ReferenceIndex` is never
+  triggered by instance documents. Measured on the external corpus: summary
+  scan 12.05 s, XML root completion 13.38 s → 0.41 s cached, per-module closure
+  17.7 ms. See `docs/design-instance-lazy-schema.md`.
 - **Instant startup indexing on giant workspaces**: `initialize` no longer
   scans the whole tree. It builds a parse-free basename index (`NameIndex`) and
   returns; the open document's closure is resolved on demand by parsing only

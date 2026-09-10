@@ -30,8 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prefix fallback for declared names that differ from filenames). Whole-tree
   work stays lazy (`ReferenceIndex` is unchanged). Measured on the external
   corpus (165 521 files): 0.27–0.29 s startup with 0 headers parsed; opening a
-  standard module resolved its closure in 12.2 ms with 0 diagnostics. See
-  `docs/design-lazy-startup-catalog.md`.
+  standard module resolved its closure in 12.2 ms with 0 diagnostics. The lazy
+  `ReferenceIndex` is unchanged (still progress-visible) and its full-tree
+  build dropped from 418.6 s to 25.0 s with the current parser fixes, returning
+  identical occurrences/references. See `docs/design-lazy-startup-catalog.md`.
 - `scripts/lsp_scan_driver.py` and `scripts/lspsample.py`: reproducible
   end-to-end probes for the workspace catalog scan (timed server log lines;
   per-process threads/user/sys CPU/RSS/context-switch sampling).

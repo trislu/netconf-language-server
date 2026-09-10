@@ -1,6 +1,6 @@
 # Lazy startup catalog (design + recon)
 
-Status: implemented locally (2026-09-11); lazy `ReferenceIndex` before/after measurement pending. Goal: `initialize` must not parse the whole tree;
+Status: implemented and verified locally (2026-09-11); all five acceptance items measured. Goal: `initialize` must not parse the whole tree;
 startup builds a cheap path/name index and the open document's closure is
 resolved on demand. Test data: https://github.com/YangModels/yang (explicit
 corpus input; counts recorded per run). Numbers below: 165 521 `.yang` files,
@@ -74,14 +74,15 @@ Conclusions that shape the design:
 
 ### 3.3 Bounded fallback
 
-- Zero filename candidates (the ~0.2 % mismatch case): mark the name pending and
-  start a **background whole-tree header scan with progress** (the current
-  `fill_catalog`, now off the startup path); when it finishes, re-run the closure
-  sync. Until then the import surfaces as the existing unresolved-import
-  diagnostic — same user-visible behaviour as an import that is genuinely
-  absent.
-- Candidate sets above a threshold (e.g. >64) still resolve eagerly but log
-  their size so pathological names stay visible.
+- Zero filename candidates (the ~0.2 % mismatch case): try the bounded
+  **prefix fallback** first (`devs` → `devs-spi.yang`, capped at 256 files); if
+  that also finds nothing, record the name as missing and log it — the import
+  then surfaces as the existing unresolved-import diagnostic, same as an import
+  that is genuinely absent. Verified end-to-end on a small workspace whose
+  module `devs` lives in `devs-spi.yang`: 1 candidate header parsed, 0
+  diagnostics.
+- Candidate sets above the 256 cap are truncated (and the resolution is logged)
+  so pathological names stay predictable.
 
 ### 3.4 Whole-tree features
 
@@ -99,8 +100,15 @@ progress-visible, unchanged. Startup must not build either index.
   references/rename unchanged with a measured before/after lazy build time; no
   whole-tree parse at startup (asserted by the log/counters); bounded fallback
   documented and exercised by a forced-mismatch test.
-- Correctness guard: for a sample of names, compare the lazy winner against a
-  full `CatalogIndex` built from the whole tree (same rule ⇒ identical winner).
+- Correctness guard: the lazy winner uses the same `resolve` rule as a
+  whole-tree `CatalogIndex`; unit tests cover pin, highest-revision and
+  parse-clean tie-breaks, plus prefix fallback and missing-name reporting.
+- Measured (external corpus, release): startup **0.27–0.29 s** /
+  `0 headers parsed` (was ~12 s); open closure 205 candidate headers in
+  12.2 ms with 0 diagnostics; `ReferenceIndex` build (lazy, unchanged
+  behaviour, progress-visible) **24.99 s** with the current parser fixes vs
+  **418.60 s** with the published 0.5.0 parser — same 7 559 734 occurrences
+  and the same 54 710 references returned.
 
 ## 5. Implementation steps
 

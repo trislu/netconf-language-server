@@ -62,9 +62,16 @@ pub(crate) struct Server {
     /// on-disk modules they can see (text-light parse) — see
     /// `docs/serving-large-trees.md`. Kept small by [`Server::sync_open_closure`].
     repo: RwLock<yrepo::Repository>,
-    /// Header-only catalog of the whole on-disk workspace (`Catalog::scan`),
-    /// built once by `ensure_scanned`. None until a workspace root exists.
-    catalog: RwLock<Option<Arc<CatalogIndex>>>,
+    /// Lazily grown header catalog: entries are added only when an open
+    /// closure needs a name (see [`Server::sync_open_closure`]). Empty until a
+    /// workspace root exists, and never a whole-tree scan at startup.
+    catalog: RwLock<Option<CatalogIndex>>,
+    /// Parse-free basename index of the on-disk workspace (`NameIndex`), built
+    /// once by `ensure_startup_index` — the only startup indexing work.
+    names: RwLock<Option<Arc<crate::closure::NameIndex>>>,
+    /// Names an open closure could not resolve from filenames (bounded
+    /// fallback ran out); logged and kept for diagnostics/logging only.
+    missed: RwLock<HashSet<String>>,
     /// Whole-tree reference index (`ReferenceIndex`), built lazily by
     /// `ensure_refidx` on the first whole-tree references request. Records
     /// definition/reference occurrences from every on-disk `.yang` file so a
@@ -93,6 +100,8 @@ impl Server {
             root_uri: OnceLock::new(),
             repo: RwLock::new(yrepo::Repository::new()),
             catalog: RwLock::new(None),
+            names: RwLock::new(None),
+            missed: RwLock::new(HashSet::new()),
             refidx: RwLock::new(None),
             open_yang: RwLock::new(HashSet::new()),
             docs: Cache::new(u32::MAX as u64), // unbounded; the client controls open buffers
@@ -172,7 +181,7 @@ impl Server {
     /// real parse cache lands with M1 when features consume the instance tree.
     async fn classify(&self, uri: &str) -> Option<inst::DocKind> {
         let text = self.rope_for(uri).await?.to_string();
-        self.ensure_scanned().await;
+        self.ensure_startup_index().await;
         let modules = self
             .snapshot()
             .await
@@ -460,37 +469,25 @@ impl Server {
         diagnostic::report(version.to_string(), items)
     }
 
-    /// Make sure the on-disk `.yang` workspace catalog has been built **once**
-    /// before serving semantics. Runs lazily: whoever needs it first starts it
-    /// (`initialized`, or an early `textDocument/diagnostic` pull that beats
-    /// it), and every other caller waits for the same single build to finish.
-    /// After the catalog exists, the repository is synced to the open closure
-    /// so a first-open diagnostic never runs against a half-populated repo.
-    async fn ensure_scanned(&self) {
+    /// Make sure the **startup index** exists: a directory walk plus a
+    /// parse-free basename index (`NameIndex`) and an empty catalog. This is
+    /// all `initialize` pays for; header parsing happens later, only for the
+    /// names an open closure actually needs. Runs once (OnceCell); every
+    /// caller waits for the same build.
+    async fn ensure_startup_index(&self) {
         if self.root_uri.get().is_none() {
             return;
         }
-        // Note: do NOT `self.scan.clone()` here — tokio's `OnceCell::clone`
-        // returns an *independent* cell, so cloning would run the scan once per
-        // call. Call `get_or_init` on `&self.scan` directly: concurrent callers
-        // share the one cell and wait for the single init.
         self.scan
             .get_or_init(|| async {
-                let start = Instant::now();
-                self.fill_catalog().await;
+                self.build_startup_index().await;
                 self.sync_open_closure().await;
-                let duration = start.elapsed();
-                Window::log(info!(format!(
-                    "workspace catalog ready in {:.6}s",
-                    duration.as_secs_f64()
-                )))
-                .await;
             })
             .await;
     }
 
     /// Make sure the whole-tree [`ReferenceIndex`] has been built before a
-    /// whole-tree references search. Unlike [`Server::ensure_scanned`] this
+    /// whole-tree references search. Unlike [`Server::ensure_startup_index`] this
     /// runs lazily (not on startup): the index is only needed by
     /// "find all references" on a symbol whose usages live in modules that
     /// merely *import* the open one, and it costs a full statement-walk of the
@@ -560,12 +557,11 @@ impl Server {
         *self.refidx.write().await = None;
     }
 
-    /// Build the header-only catalog of every on-disk `.yang` file
-    /// (`Catalog::scan`, transient parse, ~KB per file). No full parses, no
-    /// repository ingest: this is what lets a giant tree be indexed without
-    /// retaining per-file views. Documents are (re)parsed on demand when they
-    /// enter an open closure.
-    async fn fill_catalog(&self) {
+    /// Build the parse-free startup index: walk the workspace and map each
+    /// basename (minus `@revision-date`) to its files. No header is parsed and
+    /// no repository document is ingested — an empty catalog is installed and
+    /// grows lazily as open closures need names.
+    async fn build_startup_index(&self) {
         let Some(root) = self.root_uri.get() else {
             Window::log(warning!("scan skipped: no workspace root")).await;
             return;
@@ -574,35 +570,17 @@ impl Server {
             Window::log(warning!("scan skipped: cannot resolve root path")).await;
             return;
         };
+        let start = Instant::now();
         let files = workspace::walk_yang_files(&root_path);
         let total = files.len();
-        // TEMP EXPERIMENT (uncommitted): rayon-driven parallel catalog scan.
-        // yrepo's CatalogIndex::scan_many_files_with fans the read+Catalog::scan
-        // out over the rayon global pool (sized to the machine's cores) and
-        // takes the caller's url mapping (canonical file urls here), wrapped in
-        // spawn_blocking so the async handler never blocks a runtime worker.
-        // START → END elapsed is printed for hand A/B against the sequential build.
-        let start = Instant::now();
+        let index = crate::closure::NameIndex::build_owned(files);
+        let names = index.names_len();
+        let indexed = index.file_count();
+        *self.names.write().await = Some(Arc::new(index));
+        *self.catalog.write().await = Some(CatalogIndex::default());
         Window::log(info!(format!(
-            "workspace catalog scan START: {total} yang files (parallel, rayon pool)"
-        )))
-        .await;
-        let scanned = tokio::task::spawn_blocking(move || {
-            let mut index = CatalogIndex::default();
-            let n = index.scan_many_files_with(&files, |p| {
-                workspace::path_to_url(p).map(|u| workspace::canon_url(&u))
-            });
-            (index, n)
-        })
-        .await
-        .expect("catalog scan task panicked");
-        let (index, n) = scanned;
-        let duration = start.elapsed();
-        let distinct = index.names().len();
-        *self.catalog.write().await = Some(Arc::new(index));
-        Window::log(info!(format!(
-            "workspace catalog scan END after {:.3}s (parallel, rayon pool): scanned {n}/{total} yang files, {distinct} distinct module names",
-            duration.as_secs_f64()
+            "startup index: {indexed}/{total} yang files, {names} distinct names in {:.3}s (0 headers parsed)",
+            start.elapsed().as_secs_f64()
         )))
         .await;
     }
@@ -619,24 +597,54 @@ impl Server {
     /// did_change / did_close / scan paths — never while a caller holds the
     /// repository read lock.
     async fn sync_open_closure(&self) {
-        let Some(catalog) = self.catalog.read().await.clone() else {
-            return; // no workspace catalog yet (no root, or scan not run)
+        let names = self.names.read().await.clone();
+        let Some(names) = names else {
+            return; // no startup index yet (no root, or initialize not run)
         };
         let open: Vec<String> = self.open_yang.read().await.iter().cloned().collect();
+        // Resolve the closure first (may parse candidate headers), then
+        // reconcile the repository against the resulting need-set.
+        let mut catalog = self.catalog.write().await;
+        let Some(index) = catalog.as_mut() else {
+            return;
+        };
         let mut repo = self.repo.write().await;
-        // Seeds: the cross-file dependencies each open buffer declares.
         let mut seeds: Vec<crate::closure::Seed> = Vec::new();
         for url in &open {
             if let Some(root) = repo.statement(url) {
                 seeds.extend(crate::closure::header_seeds(root));
             }
         }
-        let mut needed = crate::closure::closure_urls(&catalog, &seeds);
+        let url_for =
+            |p: &std::path::Path| workspace::path_to_url(p).map(|u| workspace::canon_url(&u));
+        let resolve_start = Instant::now();
+        let (mut needed, stats) =
+            crate::closure::lazy_closure_urls(index, &names, &seeds, &url_for);
+        let resolve_ms = resolve_start.elapsed().as_secs_f64() * 1000.0;
+        let resolved = stats.names.saturating_sub(stats.missing.len());
+        if !stats.missing.is_empty() {
+            let mut missed = self.missed.write().await;
+            for name in &stats.missing {
+                missed.insert(name.clone());
+            }
+            let total_missed = missed.len();
+            drop(missed);
+            Window::log(warning!(format!(
+                "closure: {} name(s) have no filename candidates (bounded prefix fallback exhausted; {total_missed} total): {}",
+                stats.missing.len(),
+                stats.missing.join(", ")
+            )))
+            .await;
+        }
+        Window::log(info!(format!(
+            "closure: {resolved}/{} names resolved, {} candidate headers parsed in {:.1} ms",
+            stats.names, stats.parsed, resolve_ms
+        )))
+        .await;
         for url in &open {
             needed.insert(url.clone());
         }
         let mut changed = false;
-        // Drop documents that are no longer reachable from any open buffer.
         let urls: Vec<String> = repo.urls().into_iter().map(str::to_owned).collect();
         for url in urls {
             if !needed.contains(&url) {
@@ -644,8 +652,6 @@ impl Server {
                 changed = true;
             }
         }
-        // Materialize on-disk documents the open closure needs (text-light:
-        // their views only feed schema resolution, never open-buffer features).
         repo.set_text_light(true);
         for url in &needed {
             if repo.contains(url) {
@@ -765,7 +771,7 @@ impl LanguageServer for Server {
         // while it awaits `client.start()` — which only resolves once this
         // response is out — making the bar cover exactly the scan duration. It
         // also keeps the first diagnostic pull from racing a half-built catalog.
-        self.ensure_scanned().await;
+        self.ensure_startup_index().await;
 
         Ok(InitializeResult {
             server_info: Some(ServerInfo {
@@ -943,7 +949,7 @@ impl LanguageServer for Server {
             Window::log(warning!(format!("references: not a YANG doc: {uri}"))).await;
             return Ok(None);
         }
-        self.ensure_scanned().await;
+        self.ensure_startup_index().await;
         let byte = match self.caret_byte(&uri, tdp.position).await {
             Ok(b) => b,
             Err(_) => {
@@ -1146,7 +1152,7 @@ impl LanguageServer for Server {
                 params.new_name
             )));
         }
-        self.ensure_scanned().await;
+        self.ensure_startup_index().await;
         let byte = self.caret_byte(&uri, tdp.position).await?;
         let Some(rope) = self.rope_for(&uri).await else {
             return Ok(None);
@@ -1505,7 +1511,7 @@ impl LanguageServer for Server {
         }
         // Wait for (or run) the initial workspace scan so the very first pull
         // already sees the whole module set — no transient import errors.
-        self.ensure_scanned().await;
+        self.ensure_startup_index().await;
         let snap = self.snapshot().await;
         let generation = snap.generation;
         let rope = self

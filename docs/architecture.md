@@ -269,13 +269,12 @@ struct Snapshot {           // immutable compile result, cached by generation
 
 `yrepo` resolves imports/includes **only among documents you `upsert`**. Cross-file goto/hover/diagnostics therefore need, per open buffer, the modules it can actually reach — not the whole tree. Retention/compile cost scales with what the user is looking at, not with workspace size (the catalog+closure serving model; measurements in yrepo `docs/memory-findings.md`, design in `docs/serving-large-trees.md`). Implemented in `workspace.rs` + `server.rs` + `closure.rs`:
 
-1. **Workspace catalog** (`fill_catalog`, runs once via `Server.scan`/`ensure_scanned`):
-   `workspace::walk_yang_files` finds `*.yang` under the root URI — skipping
-   `target`/`.git`/`node_modules`/`.vscode`/`dist` — and each file gets a
-   `yrepo::Catalog::scan` (transient parse, header facts only, ~KB per file),
-   pushed into `Server.catalog` (`CatalogIndex`: name/revision/url + imports/
-   includes). **No full parse and no repository ingest** — this is what makes
-   a very large tree indexable in-process.
+1. **Startup index** (`build_startup_index`, once via `Server.scan`/`ensure_startup_index`): walk the
+   workspace, then build a parse-free basename index (`NameIndex`) and an empty catalog —
+   **no header is parsed at startup** (measured 0.27–0.29 s on a 165k-file tree). Header parsing is
+   deferred to on-demand closure resolution (`resolve` over the needed name's candidates, bounded and
+   cached; a bounded prefix fallback covers declared names that differ from filenames), so the
+   whole-tree header scan/`ReferenceIndex` stay lazy (see `docs/design-lazy-startup-catalog.md`).
 2. **Open-closure sync** (`sync_open_closure`, on `didOpen`/`didChange`/
    `didClose` and after the catalog build): the repository is reconciled to
    contain exactly the open buffers (upserted full in `upsert_yang`) plus every

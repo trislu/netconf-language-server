@@ -1,6 +1,6 @@
 # Lazy startup catalog (design + recon)
 
-Status: design (2026-09-11). Goal: `initialize` must not parse the whole tree;
+Status: implemented locally (2026-09-11); lazy `ReferenceIndex` before/after measurement pending. Goal: `initialize` must not parse the whole tree;
 startup builds a cheap path/name index and the open document's closure is
 resolved on demand. Test data: https://github.com/YangModels/yang (explicit
 corpus input; counts recorded per run). Numbers below: 165 521 `.yang` files,
@@ -8,10 +8,14 @@ corpus input; counts recorded per run). Numbers below: 165 521 `.yang` files,
 
 ## 1. Baseline
 
-`Server::initialize` calls `ensure_scanned()` before responding (see the comment
-in `src/server.rs`), so the whole-tree header scan is inside the client-visible
-startup path. With the post-regression-fix stack the scan is ~12.2 s (static
-musl + mimalloc override) / ~11.8 s (glibc) — the target is well under 1 s.
+`Server::initialize` used to call `ensure_scanned()` before responding (see the
+comment in `src/server.rs`), so the whole-tree header scan was inside the
+client-visible startup path: ~12.2 s (static musl + mimalloc override) / ~11.8 s
+(glibc). With the lazy startup index implemented, the measured startup is
+**0.27–0.29 s warm** (~0.95 s on the first cold walk, before the index was
+changed to move the walked paths instead of cloning them) and the log reports
+`0 headers parsed`. Opening a standard RFC module resolved its closure by
+parsing **205 candidate headers in 12.2 ms**, with 0 diagnostics.
 
 ## 2. Recon measurements (read-only, cheap)
 

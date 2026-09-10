@@ -1,0 +1,81 @@
+# Manual gnu-vs-musl timing A/B for the workspace catalog scan (skeleton).
+#
+# The scan is allocator-sensitive: the old static musl artifact spent ~69% of its
+# CPU in the kernel (allocation-churn syscall storm) and ran ~10x slower than the
+# glibc build on a multi-MB vendor subtree -- see
+# docs/perf/catalog-scan-regression-2026-09-11.md (section 3 / section 6 P0).
+# This workflow builds both Linux flavors and drives each through a single
+# `initialize` with scripts/lsp_scan_driver.py so the timing stays visible.
+#
+# Deliberately workflow_dispatch-only, and deliberately not wired into
+# push/pull_request: the reference fixture is the external YangModels corpus
+# (a `vendor/cisco/nx` subtree alone is ~514 MB), which CI must not check out or
+# require. When a stored baseline + regression threshold exist (report section 6
+# P3), promote this skeleton into a gated job with a pinned corpus cache.
+name: Perf A/B (gnu vs musl, manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      corpus_path:
+        description: "Path to a YANG subtree already present on the runner (blank = generated micro-fixture)"
+        required: false
+        default: ""
+
+jobs:
+  ab:
+    name: Catalog scan timing (${{ matrix.libc }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        libc: [gnu, musl]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-${{ matrix.libc }}
+
+      - name: Install musl tooling
+        if: matrix.libc == 'musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --target x86_64-unknown-linux-${{ matrix.libc }}
+
+      - name: Prepare fixture
+        run: |
+          # Hermetic micro-fixture by default; override with the corpus_path input
+          # to reproduce the report's numbers against a real subtree.
+          mkdir -p /tmp/yang-fixture
+          n=0
+          for f in testdata/highlight/*.yang; do
+            for i in $(seq 1 25); do
+              n=$((n + 1))
+              sed "s/^module /module perf${n}_/" "$f" > "/tmp/yang-fixture/perf${n}.yang"
+            done
+          done
+          echo "fixture files: $(find /tmp/yang-fixture -name '*.yang' | wc -l)"
+
+      - name: Run initialize scan
+        run: |
+          FIXTURE="${{ inputs.corpus_path }}"
+          if [ -z "$FIXTURE" ]; then FIXTURE=/tmp/yang-fixture; fi
+          python3 scripts/lsp_scan_driver.py \
+            "target/x86_64-unknown-linux-${{ matrix.libc }}/release/netconf-language-server" \
+            "$FIXTURE" 300 \
+            | tee "timing-${{ matrix.libc }}.txt"
+
+      - name: Upload timing
+        uses: actions/upload-artifact@v4
+        with:
+          name: timing-${{ matrix.libc }}
+          path: timing-${{ matrix.libc }}.txt

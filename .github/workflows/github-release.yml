@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build-linux:
-    name: Build Linux binary
+    name: Build Linux binary (gnu)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -20,24 +20,31 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-unknown-linux-musl
-
-      - name: Install cross-compilation dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y musl-tools
+          targets: x86_64-unknown-linux-gnu
 
       - name: Cache cargo dependencies
         uses: Swatinem/rust-cache@v2
 
+      # Native gnu build: the runner's host toolchain (glibc) is used directly,
+      # so no cross/musl tooling is installed. The catalog scan is allocation
+      # heavy, and a static musl build turns that churn into a syscall storm
+      # (~10x wall time, 69% sys CPU) — see
+      # docs/perf/catalog-scan-regression-2026-09-11.md §6 P0.
       - name: Build for Linux x64
-        run: cargo build --release --target x86_64-unknown-linux-musl
+        run: cargo build --release --target x86_64-unknown-linux-gnu
+
+      # Guard the packaging choice: the shipped Linux binary must be a gnu
+      # (dynamically linked) build, never the old static musl artifact.
+      - name: Verify gnu binary
+        run: |
+          file target/x86_64-unknown-linux-gnu/release/netconf-language-server
+          ldd target/x86_64-unknown-linux-gnu/release/netconf-language-server
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
           name: binary-linux
-          path: target/x86_64-unknown-linux-musl/release/netconf-language-server
+          path: target/x86_64-unknown-linux-gnu/release/netconf-language-server
 
   build-windows:
     name: Build Windows binary

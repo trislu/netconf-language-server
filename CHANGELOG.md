@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Linux release artifact is now a glibc (`x86_64-unknown-linux-gnu`) build,
+  and all Linux builds use `mimalloc` as the global allocator.** The catalog
+  scan allocates one owned string per CST leaf; the previous static musl build
+  turned that churn into a syscall storm (~10x wall time, ~69% sys CPU on a
+  multi-MB subtree). CI keeps a `file`/`ldd` guard so a static musl binary
+  cannot be shipped by accident. See
+  `docs/perf/catalog-scan-regression-2026-09-11.md`.
+
+### Added
+
+- `scripts/lsp_scan_driver.py` and `scripts/lspsample.py`: reproducible
+  end-to-end probes for the workspace catalog scan (timed server log lines;
+  per-process threads/user/sys CPU/RSS/context-switch sampling).
+- `.github/workflows/perf-ab.yml`: manual (workflow_dispatch) gnu-vs-musl
+  timing A/B skeleton with a hermetic micro-fixture (the external corpus is
+  never required in CI).
+
 ## [0.5.0] - 2026-09-10
 
 ### Added

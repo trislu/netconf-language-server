@@ -34,6 +34,16 @@ use tower_lsp_server::LspService;
 
 use server::Server;
 
+// Both Linux flavors we ship (gnu and musl) use mimalloc. The catalog scan is
+// allocation-churn heavy (one owned `String` per CST leaf); the default musl
+// allocator turns that churn into a syscall storm (~10x wall time, 69% sys CPU
+// on a multi-MB subtree) — see
+// docs/perf/catalog-scan-regression-2026-09-11.md §6 P0. Windows and macOS keep
+// their system allocators.
+#[cfg(target_os = "linux")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[tokio::main]
 async fn main() {
     let stdin = tokio::io::stdin();

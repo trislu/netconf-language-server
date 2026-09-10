@@ -29,6 +29,15 @@ tree-sitter-json = "0.24"
 
 yrepo = { version = "0.5.0", features = ["parallel"] }
 
+# Linux ships two flavors of the same server (gnu and musl). The catalog scan
+# allocates one owned `String` per CST leaf, and the default musl allocator turns
+# that churn into a syscall storm (~10x wall time, 69% sys CPU) — see
+# docs/perf/catalog-scan-regression-2026-09-11.md §6 P0. mimalloc keeps the churn
+# in user space; it is installed via `#[global_allocator]` in src/main.rs.
+# Scoped to Linux so the Windows/macOS artifacts keep their system allocators.
+[target.'cfg(target_os = "linux")'.dependencies]
+mimalloc = "0.1"
+
 [profile.release]
 strip = true
 lto = true

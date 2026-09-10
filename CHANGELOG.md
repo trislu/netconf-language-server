@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.7.0] - 2026-09-11
+
+### Added
+
+- **Lazy schema for NETCONF instance documents on giant workspaces**: with no
+  YANG file open, typing `<` in XML or `"` in a root JSON object now offers
+  data roots from a cached, progress-visible parse-level module-summary index
+  (first use scans the tree once; later uses are cached), and
+  diagnostics/hover/goto materialize only the document's own module closure.
+  In-progress text (a lone `<` or `"`) is tolerated, `classify`/`recognize` no
+  longer report `NotNetconf`, and find-all-references/rename still trigger only
+  their own lazy `ReferenceIndex`. Measured on the external corpus
+  (165 521 files): summary scan 12.05 s (51 -> 481 MB RSS), XML root completion
+  13.38 s first / 0.41 s cached (79 371 items), JSON root 0.39 s, per-module
+  closure 17.7 ms, diagnostics 0.24 s. Requires yrepo 0.7.1.
+
 ## [0.6.0] - 2026-09-11
 
 ### Changed

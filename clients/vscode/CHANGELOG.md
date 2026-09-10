@@ -6,6 +6,12 @@ documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this extension adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-09-11
+
+- Instance-document schema support on giant workspaces: XML/RFC 7951 JSON
+  completion, diagnostics and navigation work with no YANG file open, using a
+  lazily built module-summary index and a per-module closure.
+
 ## [0.6.0] - 2026-09-11
 
 ### Changed

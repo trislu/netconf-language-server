@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-09-11
 
 ### Changed
 
@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   artifact is kept instead of moving to a glibc build with an implied glibc
   version floor. CI asserts the artifact is static. See
   `docs/perf/catalog-scan-regression-2026-09-11.md`.
+- **Bundled `yrepo` 0.6.0**: the catalog path now parses header-only
+  (`Catalog::scan`) and lazy startup uses the new `PathIndex` +
+  `CatalogIndex::resolve_lazy`. Retained catalog fields and resolution results
+  are unchanged.
 
 ### Added
 

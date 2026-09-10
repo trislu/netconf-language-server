@@ -6,6 +6,23 @@ documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this extension adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-09-11
+
+### Changed
+
+- Bundled `netconf-language-server` updated to **0.6.0**: `initialize` no longer
+  scans the whole workspace. Startup builds a parse-free name index and returns;
+  each open document's closure is resolved on demand by parsing only the
+  candidate headers of the names it needs. On the reference giant workspace
+  (165 521 files) startup drops to 0.27–0.29 s (from a full-tree scan that took
+  minutes), and opening a standard module resolves its closure in ~12 ms.
+- The Linux server artifact stays static-musl and now uses `mimalloc` with its
+  `override` feature, removing the allocator syscall storm (~10× wall time, ~69%
+  kernel CPU) that the previous static musl build caused.
+
+No new settings or commands: semantic highlighting, formatting, completion and
+validation behave exactly as in 0.5.0.
+
 ## [0.5.0] - 2026-09-10
 
 ### Added

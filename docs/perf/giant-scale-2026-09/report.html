@@ -10,7 +10,7 @@ th:first-child,td:first-child{text-align:left}
 code{background:#f4f4f4; padding:0 3px}
 </style></head><body>
 <h1>YANG catalog + open-closure serving — giant-scale grid report</h1>
-<p class="note">Generated 2026-09-06 17:34 UTC from <code>results/raw.tsv</code> (85 runs: every 10k step of the
+<p class="note">Generated 2026-09-10 19:08 UTC from <code>results/raw.tsv</code> (85 runs: every 10k step of the
 tree, 10,000 → 165,521 files, 5 repetitions each). Tool: <code>examples/serveperf</code> (LTO release
 profile, 16-way parallel catalog scan via <code>CatalogIndex::scan_many_files</code>, then materialize +
 compile the open closure of the first 20 distinct module names, text-light ON). Generator:
@@ -48,25 +48,25 @@ compile the open closure of the first 20 distinct module names, text-light ON). 
 <text x="58.0" y="70.0" font-size="11" text-anchor="end" fill="#555">50</text>
 <line x1="64.0" y1="26.0" x2="866.0" y2="26.0" stroke="#f0f0f0"/>
 <text x="58.0" y="30.0" font-size="11" text-anchor="end" fill="#555">60</text>
-<polygon points="114.1,250.6 164.2,241.6 214.4,235.6 264.5,229.0 314.6,223.2 364.8,217.4 414.9,212.8 465.0,207.6 515.1,202.5 565.2,198.0 615.4,194.2 665.5,189.5 715.6,181.5 765.8,178.6 815.9,173.2 866.0,168.2 893.7,164.9 893.7,169.2 866.0,171.1 815.9,176.2 765.8,180.6 715.6,186.4 665.5,191.6 615.4,196.6 565.2,201.2 515.1,205.1 465.0,209.8 414.9,215.4 364.8,220.4 314.6,225.6 264.5,231.5 214.4,237.9 164.2,243.8 114.1,251.7" fill="#cfe4f2"/>
-<polyline points="114.1,251.5 164.2,241.9 214.4,236.2 264.5,229.6 314.6,224.0 364.8,218.8 414.9,213.2 465.0,208.1 515.1,204.6 565.2,199.5 615.4,195.3 665.5,190.9 715.6,185.1 765.8,180.3 815.9,174.2 866.0,169.8 893.7,167.4" fill="none" stroke="#2b7fba" stroke-width="2.2"/>
-<circle cx="114.1" cy="251.5" r="3" fill="#2b7fba"/>
-<circle cx="164.2" cy="241.9" r="3" fill="#2b7fba"/>
-<circle cx="214.4" cy="236.2" r="3" fill="#2b7fba"/>
-<circle cx="264.5" cy="229.6" r="3" fill="#2b7fba"/>
-<circle cx="314.6" cy="224.0" r="3" fill="#2b7fba"/>
-<circle cx="364.8" cy="218.8" r="3" fill="#2b7fba"/>
-<circle cx="414.9" cy="213.2" r="3" fill="#2b7fba"/>
-<circle cx="465.0" cy="208.1" r="3" fill="#2b7fba"/>
-<circle cx="515.1" cy="204.6" r="3" fill="#2b7fba"/>
-<circle cx="565.2" cy="199.5" r="3" fill="#2b7fba"/>
-<circle cx="615.4" cy="195.3" r="3" fill="#2b7fba"/>
-<circle cx="665.5" cy="190.9" r="3" fill="#2b7fba"/>
-<circle cx="715.6" cy="185.1" r="3" fill="#2b7fba"/>
-<circle cx="765.8" cy="180.3" r="3" fill="#2b7fba"/>
-<circle cx="815.9" cy="174.2" r="3" fill="#2b7fba"/>
-<circle cx="866.0" cy="169.8" r="3" fill="#2b7fba"/>
-<circle cx="893.7" cy="167.4" r="3" fill="#2b7fba"/>
+<polygon points="114.1,257.8 164.2,253.5 214.4,250.4 264.5,246.7 314.6,240.5 364.8,240.7 414.9,239.0 465.0,236.2 515.1,234.2 565.2,232.2 615.4,229.5 665.5,226.5 715.6,224.5 765.8,221.6 815.9,218.4 866.0,215.6 893.7,214.9 893.7,215.4 866.0,216.6 815.9,219.3 765.8,222.1 715.6,225.0 665.5,227.4 615.4,230.0 565.2,232.5 515.1,234.8 465.0,236.9 414.9,239.6 364.8,242.3 314.6,245.0 264.5,247.7 214.4,250.9 164.2,254.1 114.1,258.0" fill="#cfe4f2"/>
+<polyline points="114.1,257.9 164.2,253.6 214.4,250.6 264.5,247.5 314.6,244.8 364.8,241.8 414.9,239.4 465.0,236.6 515.1,234.6 565.2,232.3 615.4,229.7 665.5,227.3 715.6,224.6 765.8,222.0 815.9,219.1 866.0,216.4 893.7,215.0" fill="none" stroke="#2b7fba" stroke-width="2.2"/>
+<circle cx="114.1" cy="257.9" r="3" fill="#2b7fba"/>
+<circle cx="164.2" cy="253.6" r="3" fill="#2b7fba"/>
+<circle cx="214.4" cy="250.6" r="3" fill="#2b7fba"/>
+<circle cx="264.5" cy="247.5" r="3" fill="#2b7fba"/>
+<circle cx="314.6" cy="244.8" r="3" fill="#2b7fba"/>
+<circle cx="364.8" cy="241.8" r="3" fill="#2b7fba"/>
+<circle cx="414.9" cy="239.4" r="3" fill="#2b7fba"/>
+<circle cx="465.0" cy="236.6" r="3" fill="#2b7fba"/>
+<circle cx="515.1" cy="234.6" r="3" fill="#2b7fba"/>
+<circle cx="565.2" cy="232.3" r="3" fill="#2b7fba"/>
+<circle cx="615.4" cy="229.7" r="3" fill="#2b7fba"/>
+<circle cx="665.5" cy="227.3" r="3" fill="#2b7fba"/>
+<circle cx="715.6" cy="224.6" r="3" fill="#2b7fba"/>
+<circle cx="765.8" cy="222.0" r="3" fill="#2b7fba"/>
+<circle cx="815.9" cy="219.1" r="3" fill="#2b7fba"/>
+<circle cx="866.0" cy="216.4" r="3" fill="#2b7fba"/>
+<circle cx="893.7" cy="215.0" r="3" fill="#2b7fba"/>
 <rect x="700" y="12" width="12" height="12" fill="#2b7fba"/><text x="716" y="22" font-size="11" fill="#222">median (5 reps)</text>
 <rect x="836" y="12" width="12" height="12" fill="#cfe4f2"/><text x="700" y="12" fill="none"></text>
 <text x="720" y="34" font-size="11" fill="#666">band = min–max</text>
@@ -106,24 +106,24 @@ compile the open closure of the first 20 distinct module names, text-light ON). 
 <text x="465.0" y="298.0" font-size="12" text-anchor="middle" fill="#222">files in the catalog</text>
 <text x="12" y="146.0" font-size="12" text-anchor="middle" fill="#222" transform="rotate(-90 12 146.0)">throughput (files/s)</text>
 <text x="64" y="14" font-size="12" fill="#222" font-weight="600">2 · Catalog throughput (files/s, median of 5)</text>
-<polyline points="114.1,233.4 164.2,225.2 214.4,217.4 264.5,212.8 314.6,208.7 364.8,205.1 414.9,201.5 465.0,199.4 515.1,196.1 565.2,193.8 615.4,191.3 665.5,189.6 715.6,189.4 765.8,187.9 815.9,187.1 866.0,186.1 893.7,185.7" fill="none" stroke="#3a9e5f" stroke-width="2"/>
-<circle cx="114.1" cy="233.4" r="2.6" fill="#3a9e5f"/>
-<circle cx="164.2" cy="225.2" r="2.6" fill="#3a9e5f"/>
-<circle cx="214.4" cy="217.4" r="2.6" fill="#3a9e5f"/>
-<circle cx="264.5" cy="212.8" r="2.6" fill="#3a9e5f"/>
-<circle cx="314.6" cy="208.7" r="2.6" fill="#3a9e5f"/>
-<circle cx="364.8" cy="205.1" r="2.6" fill="#3a9e5f"/>
-<circle cx="414.9" cy="201.5" r="2.6" fill="#3a9e5f"/>
-<circle cx="465.0" cy="199.4" r="2.6" fill="#3a9e5f"/>
-<circle cx="515.1" cy="196.1" r="2.6" fill="#3a9e5f"/>
-<circle cx="565.2" cy="193.8" r="2.6" fill="#3a9e5f"/>
-<circle cx="615.4" cy="191.3" r="2.6" fill="#3a9e5f"/>
-<circle cx="665.5" cy="189.6" r="2.6" fill="#3a9e5f"/>
-<circle cx="715.6" cy="189.4" r="2.6" fill="#3a9e5f"/>
-<circle cx="765.8" cy="187.9" r="2.6" fill="#3a9e5f"/>
-<circle cx="815.9" cy="187.1" r="2.6" fill="#3a9e5f"/>
-<circle cx="866.0" cy="186.1" r="2.6" fill="#3a9e5f"/>
-<circle cx="893.7" cy="185.7" r="2.6" fill="#3a9e5f"/>
+<polyline points="114.1,206.9 164.2,187.7 214.4,172.3 264.5,162.9 314.6,157.0 364.8,147.3 414.9,140.0 465.0,135.5 515.1,128.6 565.2,123.3 615.4,120.5 665.5,117.7 715.6,115.0 765.8,113.5 815.9,113.0 866.0,111.7 893.7,109.8" fill="none" stroke="#3a9e5f" stroke-width="2"/>
+<circle cx="114.1" cy="206.9" r="2.6" fill="#3a9e5f"/>
+<circle cx="164.2" cy="187.7" r="2.6" fill="#3a9e5f"/>
+<circle cx="214.4" cy="172.3" r="2.6" fill="#3a9e5f"/>
+<circle cx="264.5" cy="162.9" r="2.6" fill="#3a9e5f"/>
+<circle cx="314.6" cy="157.0" r="2.6" fill="#3a9e5f"/>
+<circle cx="364.8" cy="147.3" r="2.6" fill="#3a9e5f"/>
+<circle cx="414.9" cy="140.0" r="2.6" fill="#3a9e5f"/>
+<circle cx="465.0" cy="135.5" r="2.6" fill="#3a9e5f"/>
+<circle cx="515.1" cy="128.6" r="2.6" fill="#3a9e5f"/>
+<circle cx="565.2" cy="123.3" r="2.6" fill="#3a9e5f"/>
+<circle cx="615.4" cy="120.5" r="2.6" fill="#3a9e5f"/>
+<circle cx="665.5" cy="117.7" r="2.6" fill="#3a9e5f"/>
+<circle cx="715.6" cy="115.0" r="2.6" fill="#3a9e5f"/>
+<circle cx="765.8" cy="113.5" r="2.6" fill="#3a9e5f"/>
+<circle cx="815.9" cy="113.0" r="2.6" fill="#3a9e5f"/>
+<circle cx="866.0" cy="111.7" r="2.6" fill="#3a9e5f"/>
+<circle cx="893.7" cy="109.8" r="2.6" fill="#3a9e5f"/>
 <rect x="214" y="12" width="12" height="12" fill="#3a9e5f"/>
 <text x="230" y="22" font-size="11" fill="#222">files/s</text>
 </svg>
@@ -163,23 +163,23 @@ compile the open closure of the first 20 distinct module names, text-light ON). 
 <text x="465.0" y="298.0" font-size="12" text-anchor="middle" fill="#222">files in the catalog</text>
 <text x="12" y="146.0" font-size="12" text-anchor="middle" fill="#222" transform="rotate(-90 12 146.0)">reported peak (MB)</text>
 <text x="64" y="14" font-size="12" fill="#222" font-weight="600">3 · Parallel-scan reported RSS/peak (max of 5) — transient parse high-water</text>
-<rect x="102.3" y="63.5" width="23.6" height="202.5" fill="#c0504d" opacity="0.85"/>
-<rect x="152.5" y="66.7" width="23.6" height="199.3" fill="#c0504d" opacity="0.85"/>
-<rect x="202.6" y="74.2" width="23.6" height="191.8" fill="#c0504d" opacity="0.85"/>
-<rect x="252.7" y="81.6" width="23.6" height="184.4" fill="#c0504d" opacity="0.85"/>
-<rect x="302.8" y="76.7" width="23.6" height="189.3" fill="#c0504d" opacity="0.85"/>
-<rect x="353.0" y="93.6" width="23.6" height="172.4" fill="#c0504d" opacity="0.85"/>
-<rect x="403.1" y="90.2" width="23.6" height="175.8" fill="#c0504d" opacity="0.85"/>
-<rect x="453.2" y="84.7" width="23.6" height="181.3" fill="#c0504d" opacity="0.85"/>
-<rect x="503.3" y="90.8" width="23.6" height="175.2" fill="#c0504d" opacity="0.85"/>
-<rect x="553.5" y="97.2" width="23.6" height="168.8" fill="#c0504d" opacity="0.85"/>
-<rect x="603.6" y="102.1" width="23.6" height="163.9" fill="#c0504d" opacity="0.85"/>
-<rect x="653.7" y="99.5" width="23.6" height="166.5" fill="#c0504d" opacity="0.85"/>
-<rect x="703.8" y="70.5" width="23.6" height="195.5" fill="#c0504d" opacity="0.85"/>
-<rect x="754.0" y="101.2" width="23.6" height="164.8" fill="#c0504d" opacity="0.85"/>
-<rect x="804.1" y="75.6" width="23.6" height="190.4" fill="#c0504d" opacity="0.85"/>
-<rect x="854.2" y="99.7" width="23.6" height="166.3" fill="#c0504d" opacity="0.85"/>
-<rect x="881.9" y="105.1" width="23.6" height="160.9" fill="#c0504d" opacity="0.85"/>
+<rect x="102.3" y="168.1" width="23.6" height="97.9" fill="#c0504d" opacity="0.85"/>
+<rect x="152.5" y="164.4" width="23.6" height="101.6" fill="#c0504d" opacity="0.85"/>
+<rect x="202.6" y="175.1" width="23.6" height="90.9" fill="#c0504d" opacity="0.85"/>
+<rect x="252.7" y="172.2" width="23.6" height="93.8" fill="#c0504d" opacity="0.85"/>
+<rect x="302.8" y="180.8" width="23.6" height="85.2" fill="#c0504d" opacity="0.85"/>
+<rect x="353.0" y="165.7" width="23.6" height="100.3" fill="#c0504d" opacity="0.85"/>
+<rect x="403.1" y="174.9" width="23.6" height="91.1" fill="#c0504d" opacity="0.85"/>
+<rect x="453.2" y="176.3" width="23.6" height="89.7" fill="#c0504d" opacity="0.85"/>
+<rect x="503.3" y="180.2" width="23.6" height="85.8" fill="#c0504d" opacity="0.85"/>
+<rect x="553.5" y="177.6" width="23.6" height="88.4" fill="#c0504d" opacity="0.85"/>
+<rect x="603.6" y="185.6" width="23.6" height="80.4" fill="#c0504d" opacity="0.85"/>
+<rect x="653.7" y="182.7" width="23.6" height="83.3" fill="#c0504d" opacity="0.85"/>
+<rect x="703.8" y="189.4" width="23.6" height="76.6" fill="#c0504d" opacity="0.85"/>
+<rect x="754.0" y="188.4" width="23.6" height="77.6" fill="#c0504d" opacity="0.85"/>
+<rect x="804.1" y="171.2" width="23.6" height="94.8" fill="#c0504d" opacity="0.85"/>
+<rect x="854.2" y="176.7" width="23.6" height="89.3" fill="#c0504d" opacity="0.85"/>
+<rect x="881.9" y="186.3" width="23.6" height="79.7" fill="#c0504d" opacity="0.85"/>
 <rect x="214" y="12" width="12" height="12" fill="#c0504d"/>
 <text x="230" y="22" font-size="11" fill="#222">peak RSS (MB)</text>
 </svg>
@@ -217,21 +217,21 @@ compile the open closure of the first 20 distinct module names, text-light ON). 
 <text x="465.0" y="298.0" font-size="12" text-anchor="middle" fill="#222">files in the catalog</text>
 <text x="12" y="146.0" font-size="12" text-anchor="middle" fill="#222" transform="rotate(-90 12 146.0)">closure compile (s)</text>
 <text x="64" y="14" font-size="12" fill="#222" font-weight="600">4 · Open-closure compile time vs tree size (median of 5)</text>
-<polyline points="114.1,117.7 164.2,263.6 214.4,264.1 264.5,263.6 314.6,264.1 364.8,263.6 414.9,264.1 465.0,264.1 515.1,263.6 565.2,263.6 615.4,263.6 665.5,263.6 715.6,264.1 765.8,264.1 815.9,263.6 866.0,263.6 893.7,263.6" fill="none" stroke="#7a4fb0" stroke-width="2"/>
-<circle cx="114.1" cy="117.7" r="2.6" fill="#7a4fb0"/>
+<polyline points="114.1,43.8 164.2,263.6 214.4,263.6 264.5,263.6 314.6,263.6 364.8,263.6 414.9,263.6 465.0,263.6 515.1,263.6 565.2,263.6 615.4,263.6 665.5,263.6 715.6,263.6 765.8,263.6 815.9,263.6 866.0,263.6 893.7,263.6" fill="none" stroke="#7a4fb0" stroke-width="2"/>
+<circle cx="114.1" cy="43.8" r="2.6" fill="#7a4fb0"/>
 <circle cx="164.2" cy="263.6" r="2.6" fill="#7a4fb0"/>
-<circle cx="214.4" cy="264.1" r="2.6" fill="#7a4fb0"/>
+<circle cx="214.4" cy="263.6" r="2.6" fill="#7a4fb0"/>
 <circle cx="264.5" cy="263.6" r="2.6" fill="#7a4fb0"/>
-<circle cx="314.6" cy="264.1" r="2.6" fill="#7a4fb0"/>
+<circle cx="314.6" cy="263.6" r="2.6" fill="#7a4fb0"/>
 <circle cx="364.8" cy="263.6" r="2.6" fill="#7a4fb0"/>
-<circle cx="414.9" cy="264.1" r="2.6" fill="#7a4fb0"/>
-<circle cx="465.0" cy="264.1" r="2.6" fill="#7a4fb0"/>
+<circle cx="414.9" cy="263.6" r="2.6" fill="#7a4fb0"/>
+<circle cx="465.0" cy="263.6" r="2.6" fill="#7a4fb0"/>
 <circle cx="515.1" cy="263.6" r="2.6" fill="#7a4fb0"/>
 <circle cx="565.2" cy="263.6" r="2.6" fill="#7a4fb0"/>
 <circle cx="615.4" cy="263.6" r="2.6" fill="#7a4fb0"/>
 <circle cx="665.5" cy="263.6" r="2.6" fill="#7a4fb0"/>
-<circle cx="715.6" cy="264.1" r="2.6" fill="#7a4fb0"/>
-<circle cx="765.8" cy="264.1" r="2.6" fill="#7a4fb0"/>
+<circle cx="715.6" cy="263.6" r="2.6" fill="#7a4fb0"/>
+<circle cx="765.8" cy="263.6" r="2.6" fill="#7a4fb0"/>
 <circle cx="815.9" cy="263.6" r="2.6" fill="#7a4fb0"/>
 <circle cx="866.0" cy="263.6" r="2.6" fill="#7a4fb0"/>
 <circle cx="893.7" cy="263.6" r="2.6" fill="#7a4fb0"/>
@@ -300,7 +300,7 @@ The resident language server scans sequentially and stays at ~255 MB on the full
 <table>
 <tr><th>files</th><th>reps</th><th>cat mean (s)</th><th>cat median (s)</th><th>cat min–max (s)</th><th>files/s</th>
 <th>RSS mean (MB)*</th><th>peak max (MB)*</th><th>closure mean (s)</th><th>closure max (s)</th><th>modules (med)</th><th>diags seen</th></tr>
-<tr><td>10,000</td><td>5</td><td>3.69</td><td>3.62</td><td>3.58–3.86</td><td>2713</td><td>2501</td><td>2531</td><td>3.054</td><td>3.150</td><td>24</td><td>3</td></tr><tr><td>20,000</td><td>5</td><td>5.89</td><td>6.03</td><td>5.55–6.11</td><td>3398</td><td>2428</td><td>2492</td><td>0.046</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>30,000</td><td>5</td><td>7.41</td><td>7.46</td><td>7.02–7.59</td><td>4046</td><td>2315</td><td>2397</td><td>0.040</td><td>0.040</td><td>31</td><td>107</td></tr><tr><td>40,000</td><td>5</td><td>9.03</td><td>9.10</td><td>8.62–9.25</td><td>4430</td><td>2228</td><td>2304</td><td>0.046</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>50,000</td><td>5</td><td>10.46</td><td>10.50</td><td>10.11–10.70</td><td>4778</td><td>2238</td><td>2367</td><td>0.042</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>60,000</td><td>5</td><td>11.82</td><td>11.81</td><td>11.39–12.14</td><td>5075</td><td>2058</td><td>2154</td><td>0.048</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>70,000</td><td>5</td><td>13.01</td><td>13.19</td><td>12.65–13.30</td><td>5379</td><td>2015</td><td>2198</td><td>0.044</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>80,000</td><td>5</td><td>14.42</td><td>14.47</td><td>14.05–14.59</td><td>5549</td><td>2081</td><td>2266</td><td>0.044</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>90,000</td><td>5</td><td>15.45</td><td>15.36</td><td>15.23–15.88</td><td>5827</td><td>2089</td><td>2190</td><td>0.046</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>100,000</td><td>5</td><td>16.63</td><td>16.62</td><td>16.21–17.00</td><td>6014</td><td>1905</td><td>2110</td><td>0.048</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>110,000</td><td>5</td><td>17.66</td><td>17.67</td><td>17.36–17.94</td><td>6228</td><td>1853</td><td>2049</td><td>0.048</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>120,000</td><td>5</td><td>18.86</td><td>18.77</td><td>18.60–19.13</td><td>6363</td><td>1971</td><td>2081</td><td>0.046</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>130,000</td><td>5</td><td>20.38</td><td>20.22</td><td>19.90–21.12</td><td>6379</td><td>2052</td><td>2443</td><td>0.044</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>140,000</td><td>5</td><td>21.52</td><td>21.43</td><td>21.34–21.86</td><td>6504</td><td>1855</td><td>2060</td><td>0.044</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>150,000</td><td>5</td><td>22.83</td><td>22.96</td><td>22.46–23.21</td><td>6571</td><td>2017</td><td>2380</td><td>0.046</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>160,000</td><td>5</td><td>24.04</td><td>24.06</td><td>23.73–24.44</td><td>6656</td><td>1769</td><td>2079</td><td>0.048</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>165,521</td><td>5</td><td>24.74</td><td>24.64</td><td>24.19–25.27</td><td>6691</td><td>1647</td><td>2011</td><td>0.046</td><td>0.050</td><td>31</td><td>107</td></tr>
+<tr><td>10,000</td><td>5</td><td>2.03</td><td>2.02</td><td>2.00–2.06</td><td>4921</td><td>1143</td><td>1223</td><td>4.620</td><td>4.690</td><td>24</td><td>3</td></tr><tr><td>20,000</td><td>5</td><td>3.07</td><td>3.09</td><td>2.97–3.12</td><td>6523</td><td>1200</td><td>1270</td><td>0.050</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>30,000</td><td>5</td><td>3.84</td><td>3.86</td><td>3.78–3.89</td><td>7804</td><td>1072</td><td>1136</td><td>0.050</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>40,000</td><td>5</td><td>4.65</td><td>4.62</td><td>4.57–4.83</td><td>8595</td><td>1071</td><td>1173</td><td>0.050</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>50,000</td><td>5</td><td>5.50</td><td>5.30</td><td>5.26–6.37</td><td>9084</td><td>986</td><td>1066</td><td>0.050</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>60,000</td><td>5</td><td>6.07</td><td>6.05</td><td>5.92–6.32</td><td>9888</td><td>1045</td><td>1254</td><td>0.050</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>70,000</td><td>5</td><td>6.67</td><td>6.65</td><td>6.61–6.76</td><td>10498</td><td>1006</td><td>1139</td><td>0.050</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>80,000</td><td>5</td><td>7.36</td><td>7.36</td><td>7.27–7.46</td><td>10873</td><td>974</td><td>1122</td><td>0.050</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>90,000</td><td>5</td><td>7.86</td><td>7.85</td><td>7.81–7.95</td><td>11453</td><td>975</td><td>1072</td><td>0.050</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>100,000</td><td>5</td><td>8.41</td><td>8.42</td><td>8.37–8.46</td><td>11888</td><td>1002</td><td>1105</td><td>0.050</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>110,000</td><td>5</td><td>9.07</td><td>9.07</td><td>9.00–9.13</td><td>12125</td><td>944</td><td>1005</td><td>0.046</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>120,000</td><td>5</td><td>9.71</td><td>9.67</td><td>9.65–9.88</td><td>12358</td><td>868</td><td>1041</td><td>0.050</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>130,000</td><td>5</td><td>10.33</td><td>10.35</td><td>10.24–10.38</td><td>12580</td><td>896</td><td>958</td><td>0.050</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>140,000</td><td>5</td><td>11.01</td><td>10.99</td><td>10.97–11.09</td><td>12711</td><td>854</td><td>970</td><td>0.050</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>150,000</td><td>5</td><td>11.76</td><td>11.73</td><td>11.67–11.89</td><td>12751</td><td>948</td><td>1185</td><td>0.048</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>160,000</td><td>5</td><td>12.44</td><td>12.40</td><td>12.35–12.60</td><td>12858</td><td>977</td><td>1116</td><td>0.050</td><td>0.050</td><td>31</td><td>107</td></tr><tr><td>165,521</td><td>5</td><td>12.72</td><td>12.74</td><td>12.65–12.78</td><td>13015</td><td>895</td><td>996</td><td>0.050</td><td>0.050</td><td>31</td><td>107</td></tr>
 </table>
 <p class="note">* parallel-scan reported RSS — transient high-water artifact, not retention.</p>
 <p class="note">Data columns (raw.tsv): files, rep, named, catalog_s, catalog_rss_kb, catalog_peak_kb,

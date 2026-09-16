@@ -116,14 +116,14 @@ mod tests {
         assert_eq!(demo.namespace, "urn:demo");
         assert_eq!(
             demo.top_data,
-            vec!["system".to_owned(), "flag".to_owned()],
-            "only top-level data nodes (no rpc/notification)"
+            vec!["system".to_owned(), "flag".to_owned(), "extra".to_owned()],
+            "top-level data nodes, including the submodule's folded `extra`"
         );
         assert_eq!(demo.rpcs, vec!["reset".to_owned()]);
         assert_eq!(demo.notifications, vec!["alarm".to_owned()]);
         assert!(
             !infos.iter().any(|m| m.name == "demo-sub"),
-            "a submodule has no namespace and is skipped: {infos:?}"
+            "a submodule has no namespace and does not become a ModuleInfo: {infos:?}"
         );
         std::fs::remove_dir_all(&dir).ok();
     }

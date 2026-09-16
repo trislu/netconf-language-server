@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   value (a string for enumeration/bits, a literal for boolean). `union` stays
   silent. Unlike `identityref` this needs no workspace index: the values come
   from the leaf's resolved type.
+- **JSON value completion at an empty value slot.** With a member key written
+  but no value yet (`"color": |`), the tolerant JSON parse kept the member with
+  an empty value span, so value completion (enumeration/bits/boolean and
+  `identityref`) found nothing. Completion now parses caret-aware, filling the
+  slot with a placeholder before mapping: string values are inserted quoted and
+  `boolean` as a bare literal. Diagnostics keep using the strict parse, so an
+  in-progress value is never validated.
 
 ### Fixed
 

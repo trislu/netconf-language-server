@@ -239,25 +239,44 @@ fn member_at_value(doc: &JsonDoc, byte: usize) -> Option<usize> {
 /// enumeration members and `bits` names (RFC 7951 encodes both as strings) and
 /// `boolean` (a JSON boolean literal). `union` stays silent. `None` when the
 /// caret is not inside the value of such a leaf.
-fn leaf_value_items(doc: &JsonDoc, byte: usize, lib: &Library) -> Option<Vec<CompletionItem>> {
+///
+/// When the value has not been typed yet (a fresh slot after `:`/`[`) the
+/// members are inserted **quoted**; inside an existing string they replace the
+/// partial token bare.
+fn leaf_value_items(
+    doc: &JsonDoc,
+    text: &str,
+    byte: usize,
+    lib: &Library,
+) -> Option<Vec<CompletionItem>> {
     let member = member_at_value(doc, byte)?;
     let map = jmap::map(doc, lib);
     let res = map.resolved(member)?;
     let vt = lib.value_type(&res.module, res.id)?;
-    let (values, kind, detail): (Vec<&str>, CompletionItemKind, &str) = match &vt {
+    let (values, kind, detail, is_string): (Vec<&str>, CompletionItemKind, &str, bool) = match &vt {
         ValueType::Enumeration { members } => (
             members.iter().map(String::as_str).collect(),
             CompletionItemKind::ENUM,
             "enum member",
+            true,
         ),
         ValueType::Bits { members } => (
             members.iter().map(String::as_str).collect(),
             CompletionItemKind::VALUE,
             "bit",
+            true,
         ),
-        ValueType::Boolean => (vec!["true", "false"], CompletionItemKind::VALUE, "boolean"),
+        ValueType::Boolean => (
+            vec!["true", "false"],
+            CompletionItemKind::VALUE,
+            "boolean",
+            false,
+        ),
         _ => return None,
     };
+    // Inside an existing `"…"` the token start follows the opening quote.
+    let token_start = crate::idcomp::word_start(text, byte);
+    let in_string = text[..token_start].ends_with('"');
     Some(
         values
             .into_iter()
@@ -265,7 +284,11 @@ fn leaf_value_items(doc: &JsonDoc, byte: usize, lib: &Library) -> Option<Vec<Com
                 label: v.to_owned(),
                 kind: Some(kind),
                 detail: Some(detail.to_owned()),
-                insert_text: Some(v.to_owned()),
+                insert_text: Some(if is_string && !in_string {
+                    format!("\"{v}\"")
+                } else {
+                    v.to_owned()
+                }),
                 ..Default::default()
             })
             .collect(),
@@ -278,12 +301,12 @@ fn leaf_value_items(doc: &JsonDoc, byte: usize, lib: &Library) -> Option<Vec<Com
 /// (ignoring whitespace), inside an object. Returns an empty list for dormant
 /// documents, leaf content, and member-value positions.
 pub fn handle(text: &str, byte: usize, lib: &Library) -> Vec<CompletionItem> {
-    let Some(doc) = crate::incomplete::tolerant_json(text) else {
+    let Some(doc) = crate::incomplete::tolerant_json_at(text, byte) else {
         return Vec::new();
     };
     // A leaf with a finite value set (`enumeration`/`bits`): complete its value
     // before the member-slot logic (a value position is not a member slot).
-    if let Some(items) = leaf_value_items(&doc, byte, lib) {
+    if let Some(items) = leaf_value_items(&doc, text, byte, lib) {
         return items;
     }
     // A fresh member slot is preceded (ignoring whitespace) by `{` or `,`.
@@ -358,8 +381,9 @@ fn top_candidates_summaries(modules: &[ModuleInfo]) -> Vec<Candidate> {
 ///
 /// An RFC 7951 identityref value is `"module-name:identity-name"` (§6.8), so no
 /// prefix declaration is involved. Each item replaces the partial value token
-/// inside the string with `module:identity`. Empty unless the caret is inside
-/// the value of a leaf whose type is `identityref`.
+/// inside the string, or fills a fresh value slot (with the quotes), with
+/// `module:identity`. Empty unless the caret is at the value of an
+/// `identityref` leaf.
 pub fn identity_completion(
     rope: &Rope,
     byte: usize,
@@ -367,7 +391,7 @@ pub fn identity_completion(
     graph: &IdentityGraph,
 ) -> Vec<CompletionItem> {
     let text = rope.to_string();
-    let Some(doc) = crate::incomplete::tolerant_json(&text) else {
+    let Some(doc) = crate::incomplete::tolerant_json_at(&text, byte) else {
         return Vec::new();
     };
     let Some(member) = member_at_value(&doc, byte) else {
@@ -392,6 +416,9 @@ pub fn identity_completion(
     }
     let token_start = crate::idcomp::word_start(&text, byte);
     let range = convert::range_to_lsp(rope, token_start..byte);
+    // At a fresh value slot (no opening quote yet) the item must supply the
+    // quotes; inside an existing `"…"` it replaces the token bare.
+    let in_string = text[..token_start].ends_with('"');
     candidates
         .into_iter()
         .map(|c| {
@@ -405,7 +432,11 @@ pub fn identity_completion(
                     .map(|ns| Documentation::String(format!("namespace `{ns}`"))),
                 text_edit: Some(CompletionTextEdit::Edit(TextEdit {
                     range,
-                    new_text: label,
+                    new_text: if in_string {
+                        label
+                    } else {
+                        format!("\"{label}\"")
+                    },
                 })),
                 ..Default::default()
             }
@@ -763,6 +794,17 @@ mod tests {
             panic!("text edit");
         };
         assert_eq!(edit.new_text, "idb:child");
+
+        // A fresh value slot (`"id": `) is repaired, and the item supplies the
+        // quotes the JSON string needs.
+        let (text, byte) = caret(r#"{ "ida:box": { "id": | } }"#);
+        let rope = Rope::from_str(&text);
+        let items = identity_completion(&rope, byte, &lib, &graph);
+        let idb = items.iter().find(|i| i.label == "idb:child").unwrap();
+        let Some(CompletionTextEdit::Edit(edit)) = &idb.text_edit else {
+            panic!("text edit");
+        };
+        assert_eq!(edit.new_text, "\"idb:child\"");
     }
 
     #[test]
@@ -821,5 +863,44 @@ mod tests {
         // offers member names (not values).
         assert!(labels(r#"{ "ev:box": { "name": "|" } }"#).is_empty());
         assert!(labels(r#"{ "ev:box": { | } }"#).contains(&"name".to_owned()));
+
+        // A value slot with nothing typed yet (`"color": `) is repaired for
+        // completion, and string values are inserted quoted.
+        let (text, byte) = caret(r#"{ "ev:box": { "color": | } }"#);
+        let items = handle(&text, byte, &lib);
+        let insert = |label: &str| {
+            items
+                .iter()
+                .find(|i| i.label == label)
+                .unwrap_or_else(|| panic!("no {label}"))
+                .insert_text
+                .clone()
+                .unwrap_or_default()
+        };
+        assert_eq!(insert("red"), "\"red\"");
+        // A `bits` array slot is quoted too (the array already parses).
+        let (text, byte) = caret(r#"{ "ev:box": { "flags": [ | ] } }"#);
+        let items = handle(&text, byte, &lib);
+        assert_eq!(
+            items
+                .iter()
+                .find(|i| i.label == "up")
+                .unwrap()
+                .insert_text
+                .as_deref(),
+            Some("\"up\"")
+        );
+        // Boolean stays a bare literal.
+        let (text, byte) = caret(r#"{ "ev:box": { "active": | } }"#);
+        let items = handle(&text, byte, &lib);
+        assert_eq!(
+            items
+                .iter()
+                .find(|i| i.label == "true")
+                .unwrap()
+                .insert_text
+                .as_deref(),
+            Some("true")
+        );
     }
 }

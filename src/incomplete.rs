@@ -38,6 +38,29 @@ pub fn tolerant_json(text: &str) -> Option<JsonDoc> {
     None
 }
 
+/// Parse `text` as JSON, additionally tolerating an **empty value slot** at
+/// `byte`: a member key written with `:` (or an array element after `[`) whose
+/// value has not been typed yet. The strict parser keeps the member but gives it
+/// an empty value span (`MISSING`), so a value-position lookup misses the caret;
+/// the repair inserts a `null` placeholder there. Nothing before `byte` moves,
+/// so the caller keeps using `byte` as the caret. Diagnostics deliberately use
+/// the strict [`tolerant_json`], so an in-progress value is never validated.
+pub fn tolerant_json_at(text: &str, byte: usize) -> Option<JsonDoc> {
+    let at_value_slot = text
+        .get(..byte)
+        .is_some_and(|before| matches!(before.trim_end().chars().next_back(), Some(':' | '[')));
+    if at_value_slot {
+        let mut repaired = String::with_capacity(text.len() + 4);
+        repaired.push_str(text.get(..byte)?);
+        repaired.push_str("null");
+        repaired.push_str(text.get(byte..)?);
+        if let Some(doc) = tolerant_json(&repaired) {
+            return Some(doc);
+        }
+    }
+    tolerant_json(text)
+}
+
 /// Bounded repair candidates for an in-progress XML document.
 fn xml_candidates(text: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -196,5 +219,22 @@ mod tests {
         assert!(tolerant_json("{\n  \"").is_some());
         assert!(tolerant_json(r#"{"a": 1, ""#).is_some());
         assert!(tolerant_json("{}").is_some());
+    }
+
+    #[test]
+    fn json_at_tolerates_an_empty_value_slot() {
+        let text = r#"{ "a":  }"#;
+        let byte = text.find('}').unwrap();
+        // The strict parse keeps the member but leaves its value span empty, so
+        // a value-position lookup does not see the caret.
+        let strict = tolerant_json(text).expect("tolerant");
+        let m = strict.members.iter().find(|m| m.local == "a").expect("a");
+        assert!(!(m.value_range.start <= byte && byte <= m.value_range.end));
+        // The caret-aware repair gives the member a value span at the caret.
+        let doc = tolerant_json_at(text, byte).expect("repaired");
+        let m = doc.members.iter().find(|m| m.local == "a").expect("a");
+        assert!(m.value_range.start <= byte && byte <= m.value_range.end);
+        // A caret that is not at a value slot falls back to the strict parse.
+        assert!(tolerant_json_at(text, text.find('a').unwrap()).is_some());
     }
 }

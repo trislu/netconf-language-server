@@ -46,7 +46,8 @@ schema-driven completion.
     `true`/`false` — in XML content and in a JSON value (a string for
     enumeration/bits, a literal for boolean). `union` stays silent; no
     workspace index is needed, the values are inline in the leaf's resolved
-    type.
+    type. An **empty JSON value slot** (`"color": ` with nothing yet) is
+    filled in for completion, with string members inserted quoted.
   - JSON: RFC 7951 member names at a fresh object slot — root members are
     always `module:name`; nested members are bare when they share the parent
     module, `module:name` otherwise. As in XML, every module the document

@@ -30,6 +30,23 @@ schema-driven completion.
     `<get-config>`/`<filter>` selection. A list entry's `key` leafs are
     inserted as placeholders, and a child in another namespace carries an
     `xmlns`.
+  - An **`identityref` leaf** (e.g. `<type>` under an interface) completes its
+    **values** from a workspace-wide identity graph. At an `xmlns:` attribute
+    name in the leaf's start tag, every module contributing an identity derived
+    from the leaf's `base` is offered as `xmlns:<module-prefix>="<namespace>"`
+    (with its identities listed); in the leaf's content, the matching
+    identities are offered as `<module-prefix>:<identity>`, adding the `xmlns`
+    declaration when the prefix is not yet in scope. The module's YANG prefix is
+    reused as the XML prefix, and identities from modules outside the open
+    closure are included. In JSON the same graph completes an `identityref`
+    value inside its string as `module-name:identity-name` (RFC 7951 §6.8), so
+    no prefix declaration is involved.
+  - A leaf whose type has a **finite value set** completes its value: an
+    `enumeration` offers its members, a `bits` its bit names, and a `boolean`
+    `true`/`false` — in XML content and in a JSON value (a string for
+    enumeration/bits, a literal for boolean). `union` stays silent; no
+    workspace index is needed, the values are inline in the leaf's resolved
+    type.
   - JSON: RFC 7951 member names at a fresh object slot — root members are
     always `module:name`; nested members are bare when they share the parent
     module, `module:name` otherwise. As in XML, every module the document

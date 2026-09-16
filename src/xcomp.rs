@@ -25,12 +25,12 @@
 //! still mapped and validated.
 
 use tower_lsp_server::ls_types::{CompletionItem, CompletionItemKind, InsertTextFormat};
-use yrepo::{Library, NodeKind};
+use yrepo::{Library, NodeKind, ValueType};
 
 use crate::inst::{ModuleInfo, NETCONF_BASE_NS};
 use crate::inst_map::{Resolved, map_doc};
 use crate::valcheck::{self, DefaultValue};
-use crate::xml::XmlNode;
+use crate::xml::{XmlDoc, XmlNode};
 
 /// One completable child data node.
 struct Child {
@@ -354,6 +354,14 @@ pub fn handle(text: &str, byte: usize, lib: &Library) -> Vec<CompletionItem> {
     let map = map_doc(&doc, lib);
     let mapped = map.resolved(parent).cloned();
 
+    // A leaf with a finite value set (`enumeration`/`bits`): offer its members
+    // when the caret is in the element's content (not its start tag).
+    if let Some(r) = &mapped
+        && let Some(items) = leaf_value_items(lib, r, &doc, text, parent, byte)
+    {
+        return items;
+    }
+
     let children = match mapped {
         Some(r) => Some(children_of_mapped(lib, &r)),
         None if is_payload_wrapper(p) => Some(children_all_modules(lib)),
@@ -368,6 +376,51 @@ pub fn handle(text: &str, byte: usize, lib: &Library) -> Vec<CompletionItem> {
         .iter()
         .map(|c| item(c, parent_ns, after_open))
         .collect()
+}
+
+/// Completion items for a leaf's **value** when the type has a finite value set:
+/// enumeration members, `bits` names and `boolean`. `union` (and any other
+/// reference/scalar type) stays silent. `None` when the caret is elsewhere.
+fn leaf_value_items(
+    lib: &Library,
+    res: &Resolved,
+    doc: &XmlDoc,
+    text: &str,
+    elem: usize,
+    byte: usize,
+) -> Option<Vec<CompletionItem>> {
+    // Content position only: the caret must be past the start tag (a caret in
+    // the tag is an attribute position, and a self-closing leaf has no value).
+    if byte < doc.start_tag_end(elem, text)? {
+        return None;
+    }
+    let vt = lib.value_type(&res.module, res.id)?;
+    let (values, kind, detail): (Vec<&str>, CompletionItemKind, &str) = match &vt {
+        ValueType::Enumeration { members } => (
+            members.iter().map(String::as_str).collect(),
+            CompletionItemKind::ENUM,
+            "enum member",
+        ),
+        ValueType::Bits { members } => (
+            members.iter().map(String::as_str).collect(),
+            CompletionItemKind::VALUE,
+            "bit",
+        ),
+        ValueType::Boolean => (vec!["true", "false"], CompletionItemKind::VALUE, "boolean"),
+        _ => return None,
+    };
+    Some(
+        values
+            .into_iter()
+            .map(|v| CompletionItem {
+                label: v.to_owned(),
+                kind: Some(kind),
+                detail: Some(detail.to_owned()),
+                insert_text: Some(v.to_owned()),
+                ..Default::default()
+            })
+            .collect(),
+    )
 }
 
 /// Tier-1 completion items at `byte` from the module summaries only (no
@@ -716,5 +769,56 @@ mod tests {
             "a data-tree root has no root-position data slots"
         );
         assert!(handle_summaries("not xml", 0, &mods).is_empty());
+    }
+
+    #[test]
+    fn enumeration_and_bits_leaves_complete_their_values() {
+        let src = r#"module ev {
+  yang-version 1.1;
+  namespace "urn:ev";
+  prefix ev;
+  revision 2026-01-01;
+  container box {
+    leaf color { type enumeration { enum red; enum green; } }
+    leaf flags { type bits { bit up; bit down; } }
+    leaf active { type boolean; }
+    leaf mixed { type union { type boolean; type enumeration { enum one; } } }
+    leaf name { type string; }
+  }
+}"#;
+        let mut repo = yrepo::Repository::new();
+        repo.upsert("/ev.yang", src);
+        let lib = repo.compile().library.expect("library");
+
+        let labels = |text: &str| -> Vec<String> {
+            let byte = marker_byte(text);
+            handle(text, byte, &lib)
+                .iter()
+                .map(|c| c.label.clone())
+                .collect()
+        };
+        // Enumeration members are offered in the leaf's content.
+        assert_eq!(
+            labels(r#"<box xmlns="urn:ev"><color>|</color></box>"#),
+            ["red", "green"]
+        );
+        // Bits names likewise.
+        assert_eq!(
+            labels(r#"<box xmlns="urn:ev"><flags>|</flags></box>"#),
+            ["up", "down"]
+        );
+        // Boolean offers both literals.
+        assert_eq!(
+            labels(r#"<box xmlns="urn:ev"><active>|</active></box>"#),
+            ["true", "false"]
+        );
+        // A union stays silent (the member type is ambiguous).
+        assert!(labels(r#"<box xmlns="urn:ev"><mixed>|</mixed></box>"#).is_empty());
+        // A plain string leaf has no value completion.
+        assert!(labels(r#"<box xmlns="urn:ev"><name>|</name></box>"#).is_empty());
+        // A caret in the start tag is an attribute position, not a value.
+        assert!(labels(r#"<box xmlns="urn:ev"><color |></color></box>"#).is_empty());
+        // A self-closing leaf has no content to complete.
+        assert!(labels(r#"<box xmlns="urn:ev"><color/|></box>"#).is_empty());
     }
 }

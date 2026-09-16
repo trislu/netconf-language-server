@@ -16,10 +16,20 @@
 //! Snippets mirror the XML writer: containers open `{ … }`, lists open an
 //! array with a `{ … }` entry carrying their `key` members, leaf-lists open
 //! `[ … ]`, leaves leave the value to the user.
+//!
+//! It also completes the **value** of an `identityref` leaf (RFC 7951 §6.8:
+//! the value is `"module-name:identity-name"`), from the same workspace-wide
+//! identity graph the XML side uses.
 
-use tower_lsp_server::ls_types::{CompletionItem, CompletionItemKind, InsertTextFormat};
-use yrepo::{Library, NodeKind};
+use ropey::Rope;
+use tower_lsp_server::ls_types::{
+    CompletionItem, CompletionItemKind, CompletionTextEdit, Documentation, InsertTextFormat,
+    TextEdit,
+};
+use yrepo::{Library, NodeKind, ValueType};
 
+use crate::convert;
+use crate::idgraph::{IdentityGraph, resolve_base};
 use crate::inst::ModuleInfo;
 use crate::jmap;
 use crate::json::{JsonDoc, JsonVal};
@@ -212,6 +222,56 @@ fn containing_member(doc: &JsonDoc, obj: usize) -> Option<usize> {
     })
 }
 
+/// The deepest member whose **value** span contains `byte`, inclusive of the
+/// value end so a caret right after an unquoted scalar (a boolean or number
+/// being typed) counts as inside it. `None` for a caret in a key or outside
+/// every value.
+fn member_at_value(doc: &JsonDoc, byte: usize) -> Option<usize> {
+    doc.members
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.value_range.start <= byte && byte <= m.value_range.end)
+        .max_by_key(|(_, m)| m.value_range.start)
+        .map(|(i, _)| i)
+}
+
+/// Completion items for a leaf's value when the type has a finite value set:
+/// enumeration members and `bits` names (RFC 7951 encodes both as strings) and
+/// `boolean` (a JSON boolean literal). `union` stays silent. `None` when the
+/// caret is not inside the value of such a leaf.
+fn leaf_value_items(doc: &JsonDoc, byte: usize, lib: &Library) -> Option<Vec<CompletionItem>> {
+    let member = member_at_value(doc, byte)?;
+    let map = jmap::map(doc, lib);
+    let res = map.resolved(member)?;
+    let vt = lib.value_type(&res.module, res.id)?;
+    let (values, kind, detail): (Vec<&str>, CompletionItemKind, &str) = match &vt {
+        ValueType::Enumeration { members } => (
+            members.iter().map(String::as_str).collect(),
+            CompletionItemKind::ENUM,
+            "enum member",
+        ),
+        ValueType::Bits { members } => (
+            members.iter().map(String::as_str).collect(),
+            CompletionItemKind::VALUE,
+            "bit",
+        ),
+        ValueType::Boolean => (vec!["true", "false"], CompletionItemKind::VALUE, "boolean"),
+        _ => return None,
+    };
+    Some(
+        values
+            .into_iter()
+            .map(|v| CompletionItem {
+                label: v.to_owned(),
+                kind: Some(kind),
+                detail: Some(detail.to_owned()),
+                insert_text: Some(v.to_owned()),
+                ..Default::default()
+            })
+            .collect(),
+    )
+}
+
 /// Completion items at `byte` (byte offset) in `text`.
 ///
 /// Offered only at a fresh member slot: immediately after `{` or `,`
@@ -221,6 +281,11 @@ pub fn handle(text: &str, byte: usize, lib: &Library) -> Vec<CompletionItem> {
     let Some(doc) = crate::incomplete::tolerant_json(text) else {
         return Vec::new();
     };
+    // A leaf with a finite value set (`enumeration`/`bits`): complete its value
+    // before the member-slot logic (a value position is not a member slot).
+    if let Some(items) = leaf_value_items(&doc, byte, lib) {
+        return items;
+    }
     // A fresh member slot is preceded (ignoring whitespace) by `{` or `,`.
     let bytes = text.as_bytes();
     let mut p = byte;
@@ -287,6 +352,65 @@ fn top_candidates_summaries(modules: &[ModuleInfo]) -> Vec<Candidate> {
     }
     out.sort_by(|a, b| a.qname.cmp(&b.qname));
     out
+}
+
+/// Completion items for the **value** of an `identityref` leaf at `byte`.
+///
+/// An RFC 7951 identityref value is `"module-name:identity-name"` (§6.8), so no
+/// prefix declaration is involved. Each item replaces the partial value token
+/// inside the string with `module:identity`. Empty unless the caret is inside
+/// the value of a leaf whose type is `identityref`.
+pub fn identity_completion(
+    rope: &Rope,
+    byte: usize,
+    lib: &Library,
+    graph: &IdentityGraph,
+) -> Vec<CompletionItem> {
+    let text = rope.to_string();
+    let Some(doc) = crate::incomplete::tolerant_json(&text) else {
+        return Vec::new();
+    };
+    let Some(member) = member_at_value(&doc, byte) else {
+        return Vec::new();
+    };
+    let map = jmap::map(&doc, lib);
+    let Some(res) = map.resolved(member) else {
+        return Vec::new();
+    };
+    let Some(ValueType::Identityref { base }) = lib.value_type(&res.module, res.id) else {
+        return Vec::new();
+    };
+    let Some((base_module, base_name)) = base
+        .as_deref()
+        .and_then(|b| resolve_base(lib, &res.module, b))
+    else {
+        return Vec::new();
+    };
+    let candidates = graph.derived_from(&base_module, &base_name);
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+    let token_start = crate::idcomp::word_start(&text, byte);
+    let range = convert::range_to_lsp(rope, token_start..byte);
+    candidates
+        .into_iter()
+        .map(|c| {
+            let label = format!("{}:{}", c.module, c.name);
+            CompletionItem {
+                label: label.clone(),
+                kind: Some(CompletionItemKind::ENUM),
+                detail: Some(format!("identity (module {})", c.module)),
+                documentation: c
+                    .namespace
+                    .map(|ns| Documentation::String(format!("namespace `{ns}`"))),
+                text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+                    range,
+                    new_text: label,
+                })),
+                ..Default::default()
+            }
+        })
+        .collect()
 }
 
 /// Tier-1 completion items at `byte` from the module summaries only (no
@@ -579,5 +703,123 @@ mod tests {
         // Not a fresh member slot.
         let (text, byte) = caret("{\n  \"m:system\": {} |\n}");
         assert!(handle_summaries(&text, byte, &mods).is_empty());
+    }
+
+    const IDA: &str = r#"module ida {
+  yang-version 1.1;
+  namespace "urn:ida";
+  prefix a;
+  revision 2026-01-01;
+  identity root;
+  container box { leaf id { type identityref { base root; } } }
+}"#;
+    const IDB: &str = r#"module idb {
+  yang-version 1.1;
+  namespace "urn:idb";
+  prefix b;
+  revision 2026-01-01;
+  import ida { prefix a; }
+  identity child { base a:root; }
+}"#;
+
+    fn identity_setup() -> (Arc<Library>, IdentityGraph) {
+        let dir = std::env::temp_dir().join(format!(
+            "ncls-jcomp-id-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let a = dir.join("ida.yang");
+        let b = dir.join("idb.yang");
+        std::fs::write(&a, IDA).unwrap();
+        std::fs::write(&b, IDB).unwrap();
+        let mut repo = Repository::new();
+        repo.upsert(a.to_string_lossy().to_string(), IDA);
+        repo.upsert(b.to_string_lossy().to_string(), IDB);
+        let lib = repo.compile().library.expect("library");
+        let mut index = yrepo::SummaryIndex::default();
+        index.scan_many_files_with([&a, &b], |p| Some(p.to_string_lossy().to_string()));
+        let graph = IdentityGraph::build(&index);
+        std::fs::remove_dir_all(&dir).ok();
+        (lib, graph)
+    }
+
+    #[test]
+    fn identityref_values_complete_module_qualified_identities() {
+        let (lib, graph) = identity_setup();
+        let (text, byte) = caret(r#"{ "ida:box": { "id": "|" } }"#);
+        let rope = Rope::from_str(&text);
+        let items = identity_completion(&rope, byte, &lib, &graph);
+        let mut got = labels(&items);
+        got.sort();
+        // The base itself plus the identity derived in the other module.
+        assert_eq!(got, vec!["ida:root".to_owned(), "idb:child".to_owned()]);
+        // The value is inserted bare (inside the existing quotes).
+        let idb = items.iter().find(|i| i.label == "idb:child").unwrap();
+        let Some(CompletionTextEdit::Edit(edit)) = &idb.text_edit else {
+            panic!("text edit");
+        };
+        assert_eq!(edit.new_text, "idb:child");
+    }
+
+    #[test]
+    fn identity_value_completion_replaces_a_partial_token() {
+        let (lib, graph) = identity_setup();
+        let (text, byte) = caret(r#"{ "ida:box": { "id": "idb:|" } }"#);
+        let rope = Rope::from_str(&text);
+        let items = identity_completion(&rope, byte, &lib, &graph);
+        let idb = items.iter().find(|i| i.label == "idb:child").unwrap();
+        let Some(CompletionTextEdit::Edit(edit)) = &idb.text_edit else {
+            panic!("text edit");
+        };
+        // The edit range covers the whole typed `idb:` token.
+        assert_eq!(edit.range.end.character - edit.range.start.character, 4);
+    }
+
+    #[test]
+    fn enumeration_leaves_complete_their_values() {
+        let src = r#"module ev {
+  yang-version 1.1;
+  namespace "urn:ev";
+  prefix ev;
+  revision 2026-01-01;
+  container box {
+    leaf color { type enumeration { enum red; enum green; } }
+    leaf flags { type bits { bit up; bit down; } }
+    leaf active { type boolean; }
+    leaf mixed { type union { type boolean; type enumeration { enum one; } } }
+    leaf name { type string; }
+  }
+}"#;
+        let mut repo = Repository::new();
+        repo.upsert("/ev.yang", src);
+        let lib = repo.compile().library.expect("library");
+
+        let labels = |marked: &str| -> Vec<String> {
+            let (text, byte) = caret(marked);
+            handle(&text, byte, &lib)
+                .iter()
+                .map(|c| c.label.clone())
+                .collect()
+        };
+        assert_eq!(
+            labels(r#"{ "ev:box": { "color": "|" } }"#),
+            ["red", "green"]
+        );
+        assert_eq!(labels(r#"{ "ev:box": { "flags": "|" } }"#), ["up", "down"]);
+        // A boolean value is a JSON literal; the caret is inside it.
+        assert_eq!(
+            labels(r#"{ "ev:box": { "active": tr|ue } }"#),
+            ["true", "false"]
+        );
+        // A union stays silent.
+        assert!(labels(r#"{ "ev:box": { "mixed": "on|e" } }"#).is_empty());
+        // A plain string leaf has no value completion, and a member slot still
+        // offers member names (not values).
+        assert!(labels(r#"{ "ev:box": { "name": "|" } }"#).is_empty());
+        assert!(labels(r#"{ "ev:box": { | } }"#).contains(&"name".to_owned()));
     }
 }

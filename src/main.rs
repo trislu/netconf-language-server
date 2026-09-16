@@ -15,6 +15,8 @@ mod fold;
 mod format;
 mod goto;
 mod hover;
+mod idcomp;
+mod idgraph;
 mod incomplete;
 mod inst;
 mod inst_map;

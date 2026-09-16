@@ -125,6 +125,30 @@ impl XmlDoc {
         None
     }
 
+    /// The byte offset just past the element's start tag (`>`), honoring quoted
+    /// attribute values; `None` when the tag is malformed. A caret before this
+    /// offset is inside the start tag (attributes), not the element content.
+    pub fn start_tag_end(&self, elem: usize, text: &str) -> Option<usize> {
+        let n = self.nodes.get(elem)?;
+        let bytes = text.as_bytes();
+        let mut quote: Option<u8> = None;
+        let mut j = n.name_range.start;
+        while j < n.elem_range.end {
+            let b = bytes[j];
+            match quote {
+                Some(q) if b == q => quote = None,
+                Some(_) => {}
+                None => match b {
+                    b'"' | b'\'' => quote = Some(b),
+                    b'>' => return Some(j + 1),
+                    _ => {}
+                },
+            }
+            j += 1;
+        }
+        None
+    }
+
     /// The trimmed text content of a **leaf** element `i` (one with no child
     /// elements), plus the byte range of that trimmed content in `text`.
     /// Returns `None` for container elements (or malformed tag structure).

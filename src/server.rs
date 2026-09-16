@@ -84,6 +84,9 @@ pub(crate) struct Server {
     /// library exists. Same lifecycle as `refidx`: rebuilt lazily after
     /// [`Server::invalidate_refidx`].
     summary: RwLock<Option<Arc<SummaryIndex>>>,
+    /// Workspace-wide identity graph for `identityref` value completion, built
+    /// lazily from [`Server::ensure_summary_index`] and invalidated with it.
+    id_graph: RwLock<Option<Arc<crate::idgraph::IdentityGraph>>>,
     /// Tier-2 modules per open instance document: the module names whose
     /// closures [`Server::ensure_instance_modules`] materialized for an XML/JSON
     /// doc. [`Server::sync_open_closure`] seeds from these names, so the
@@ -121,6 +124,7 @@ impl Server {
             missed: RwLock::new(HashSet::new()),
             refidx: RwLock::new(None),
             summary: RwLock::new(None),
+            id_graph: RwLock::new(None),
             instance_modules: RwLock::new(HashMap::new()),
             open_yang: RwLock::new(HashSet::new()),
             docs: Cache::new(u32::MAX as u64), // unbounded; the client controls open buffers
@@ -620,6 +624,7 @@ impl Server {
     async fn invalidate_refidx(&self) {
         *self.refidx.write().await = None;
         *self.summary.write().await = None;
+        *self.id_graph.write().await = None;
     }
 
     /// Make sure the Tier-1 parse-level [`SummaryIndex`] exists: module name,
@@ -674,6 +679,20 @@ impl Server {
         )))
         .await;
         self.summary.read().await.clone()
+    }
+
+    /// The workspace-wide identity graph, built lazily from the summary index
+    /// and cached until [`Server::invalidate_refidx`] drops it. `None` when
+    /// there is no workspace root. Handlers run serially, so the unlocked build
+    /// cannot race.
+    async fn ensure_id_graph(&self) -> Option<Arc<crate::idgraph::IdentityGraph>> {
+        if let Some(graph) = self.id_graph.read().await.clone() {
+            return Some(graph);
+        }
+        let index = self.ensure_summary_index().await?;
+        let graph = Arc::new(crate::idgraph::IdentityGraph::build(&index));
+        *self.id_graph.write().await = Some(graph.clone());
+        Some(graph)
     }
 
     /// Tier 2: resolve `namespaces` to module names (via the Tier-1 summary
@@ -1753,6 +1772,23 @@ impl LanguageServer for Server {
             let Some(lib) = lib else {
                 return Ok(Some(CompletionResponse::Array(Vec::new())));
             };
+            // Identityref values (both encodings): offer the workspace
+            // identities derived from the leaf's `base`. XML at an `xmlns:`
+            // declaration or in the leaf's content; JSON inside the value
+            // string. Needs the summary-index identity graph, so it covers
+            // modules outside the compiled closure.
+            if let Some(graph) = self.ensure_id_graph().await {
+                let items = match lang {
+                    workspace::DocLang::Xml => crate::idcomp::handle(&rope, byte, &lib, &graph),
+                    workspace::DocLang::Json => {
+                        crate::jcomp::identity_completion(&rope, byte, &lib, &graph)
+                    }
+                    _ => Vec::new(),
+                };
+                if !items.is_empty() {
+                    return Ok(Some(CompletionResponse::Array(items)));
+                }
+            }
             let items = match lang {
                 workspace::DocLang::Xml => crate::xcomp::handle(&text, byte, &lib),
                 workspace::DocLang::Json => crate::jcomp::handle(&text, byte, &lib),

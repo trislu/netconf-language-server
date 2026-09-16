@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`identityref` value completion in XML and JSON instance documents.** An
+  `identityref` leaf (such as an interface's `<type>`) now suggests its valid
+  values from a workspace-wide identity graph built from the summary index:
+  every identity that is the leaf's `base` or derived from it, across modules
+  outside the open closure too. In XML, at an `xmlns:` attribute name in the
+  leaf's start tag it offers one namespace declaration per contributing module
+  (`xmlns:<module-prefix>="<namespace>"`, with that module's identities
+  listed), and in the leaf's content it offers `<module-prefix>:<identity>`,
+  adding the `xmlns` declaration when the prefix is not yet in scope. In JSON
+  (RFC 7951 §6.8) it completes the value string with `module-name:identity-name`.
+- **`enumeration`/`bits`/`boolean` leaf value completion.** A leaf whose type
+  has a finite value set now completes its value — enum members, the bit names
+  of a `bits`, or `true`/`false` for a `boolean` — in XML content and in a JSON
+  value (a string for enumeration/bits, a literal for boolean). `union` stays
+  silent. Unlike `identityref` this needs no workspace index: the values come
+  from the leaf's resolved type.
+
 ### Fixed
 
 - **XML completion in an `edit-config` payload (and at every other NETCONF

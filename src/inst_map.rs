@@ -400,38 +400,38 @@ fn filter_mask(doc: &XmlDoc) -> Vec<bool> {
     in_filter
 }
 
-/// How an XML reference value should be judged.
-enum RefValue {
-    /// Check this text (a canonical `module:local` for an identityref).
-    Text(String),
+/// How an XML `identityref` value resolves against its namespace context.
+enum XmlIdentity {
+    /// The value's module (XML namespace → compiled module) and local name.
+    Resolved(String, String),
+    /// The value is not a well-formed QName; the shared shape check reports it.
+    Malformed,
     /// The value's namespace does not resolve to a compiled module: stay silent
     /// rather than report an "unknown identity" that is really a missing lazy
     /// schema.
     Skip,
 }
 
-/// Rewrite an XML `identityref` value into yrepo's `module:local` form using the
-/// containing element's in-scope XML namespace context: a prefix is an **XML**
-/// namespace prefix (declared on the element or an ancestor), and an unprefixed
-/// value lives in the default namespace in effect on the element (RFC 7950
-/// §9.10.3). A malformed value is returned as-is so the shared checker reports
-/// its shape.
-fn resolve_xml_identityref(doc: &XmlDoc, lib: &Library, elem: usize, raw: &str) -> RefValue {
+/// Resolve an XML `identityref` value using the containing element's in-scope
+/// XML namespace context: a prefix is an **XML** namespace prefix (declared on
+/// the element or an ancestor), and an unprefixed value lives in the default
+/// namespace in effect on the element (RFC 7950 §9.10.3).
+fn resolve_xml_identityref(doc: &XmlDoc, lib: &Library, elem: usize, raw: &str) -> XmlIdentity {
     let v = raw.trim();
     if v.is_empty() || v.split_whitespace().count() > 1 || v.split(':').count() > 2 {
-        return RefValue::Text(v.to_owned());
+        return XmlIdentity::Malformed;
     }
     let (prefix, local) = match v.split_once(':') {
         Some((p, l)) => (Some(p), l),
         None => (None, v),
     };
     let Some(uri) = doc.in_scope_ns(elem, prefix) else {
-        return RefValue::Skip;
+        return XmlIdentity::Skip;
     };
     let Some(module) = lib.modules().iter().find(|m| m.namespace() == Some(uri)) else {
-        return RefValue::Skip;
+        return XmlIdentity::Skip;
     };
-    RefValue::Text(format!("{}:{}", module.name(), local))
+    XmlIdentity::Resolved(module.name().to_owned(), local.to_owned())
 }
 
 /// M5 leaf *value* validation over a whole document (best effort, D31): for
@@ -466,16 +466,26 @@ pub fn value_diags(doc: &XmlDoc, text: &str, lib: &Library) -> Vec<InstDiag> {
         };
         // An XML `identityref` value names its module through an XML namespace
         // prefix or the in-scope default namespace (RFC 7950 §9.10.3), not a
-        // YANG prefix. Rewrite it to yrepo's `module:local` form; when the
-        // namespace does not resolve to a compiled module, do not judge it.
-        let value = match &vt {
-            ValueType::Identityref { .. } => match resolve_xml_identityref(doc, lib, i, &value) {
-                RefValue::Text(v) => v,
-                RefValue::Skip => continue,
+        // YANG prefix. Resolve that module here and hand it to the
+        // caller-resolved check; when the namespace does not resolve to a
+        // compiled module, do not judge the value at all.
+        let msg = match &vt {
+            ValueType::Identityref { base } => match resolve_xml_identityref(doc, lib, i, &value) {
+                XmlIdentity::Resolved(module, local) => crate::valcheck::check_identityref_value(
+                    lib,
+                    &res.module,
+                    base.as_deref(),
+                    &module,
+                    &local,
+                ),
+                XmlIdentity::Malformed => {
+                    crate::valcheck::check_value(lib, &res.module, &vt, &value)
+                }
+                XmlIdentity::Skip => None,
             },
-            _ => value,
+            _ => crate::valcheck::check_value(lib, &res.module, &vt, &value),
         };
-        if let Some(msg) = crate::valcheck::check_value(lib, &res.module, &vt, &value) {
+        if let Some(msg) = msg {
             diags.push(InstDiag {
                 range,
                 message: format!("invalid value: {msg}"),

@@ -363,17 +363,28 @@ pub fn value_diags(doc: &JsonDoc, text: &str, lib: &Library) -> Vec<InstDiag> {
                 continue;
             };
             let value = json_value(&vt, raw);
-            // An RFC 7951 identityref value is `module:name`. That module is
-            // often outside the document's own closure; when it is not compiled,
-            // "unknown identity" would be a lazy-schema artifact rather than a
-            // document error, so stay silent.
-            if let ValueType::Identityref { .. } = &vt
-                && let Some((module, _)) = value.trim().split_once(':')
-                && lib.module(module).is_none()
-            {
-                continue;
-            }
-            if let Some(msg) = crate::valcheck::check_value(lib, &res.module, &vt, &value) {
+            // An RFC 7951 identityref value is `module:name`, so the value's
+            // module is explicit. Judge it only when that module is compiled —
+            // otherwise "unknown identity" would be a lazy-schema artifact
+            // rather than a document error. A malformed value still goes
+            // through the shared shape check.
+            let msg = match &vt {
+                ValueType::Identityref { base } => match value.trim().split_once(':') {
+                    Some((module, local)) if lib.module(module).is_some() => {
+                        crate::valcheck::check_identityref_value(
+                            lib,
+                            &res.module,
+                            base.as_deref(),
+                            module,
+                            local,
+                        )
+                    }
+                    Some(_) => None,
+                    None => crate::valcheck::check_value(lib, &res.module, &vt, &value),
+                },
+                _ => crate::valcheck::check_value(lib, &res.module, &vt, &value),
+            };
+            if let Some(msg) = msg {
                 diags.push(InstDiag {
                     range,
                     message: format!("invalid value: {msg}"),

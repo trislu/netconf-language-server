@@ -126,6 +126,29 @@ pub fn check_ref(lib: &Library, module: &str, t: &ValueType, value: &str) -> Opt
     }
 }
 
+/// The message for an `identityref` value whose **module the caller already
+/// resolved** — from an XML namespace prefix/default namespace (RFC 7950
+/// §9.10.3) or an RFC 7951 `module:name`. `None` when the value is valid for
+/// `base`. Unlike [`check_ref`], no QName guessing happens: the caller supplies
+/// the value module.
+pub fn check_identityref_value(
+    lib: &Library,
+    leaf_module: &str,
+    base: Option<&str>,
+    value_module: &str,
+    value_local: &str,
+) -> Option<String> {
+    match lib.check_identityref_in(leaf_module, base, value_module, value_local) {
+        IdentityStatus::Ok => None,
+        IdentityStatus::UnknownIdentity => {
+            Some(format!("unknown identity `{value_module}:{value_local}`"))
+        }
+        IdentityStatus::NotDerived => base.map(|b| {
+            format!("identity `{value_module}:{value_local}` is not `{b}` or derived from it")
+        }),
+    }
+}
+
 fn check_string(lengths: &[String], patterns: &[String], value: &str) -> Option<String> {
     let n = value.chars().count();
     for spec in lengths {

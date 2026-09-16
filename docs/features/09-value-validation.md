@@ -20,6 +20,17 @@ the module schema, and inserting typed defaults when you complete a leaf.
 | instance-identifier | coarse | non-empty, no whitespace |
 | union / leafref / unresolved | none | silent |
 
+- **Identityref namespace resolution**: in XML the value's prefix is an **XML
+  namespace prefix** (RFC 7950 §9.10.3), declared with `xmlns:` on the element
+  or inherited from an ancestor; an unprefixed value is in the namespace's
+  default (`xmlns`) scope. The validator resolves it that way, so
+  `<type xmlns:ianaift="urn:…:iana-if-type">ianaift:ethernetCsmacd</type>` is
+  recognized even though `ianaift` is not a YANG prefix of the leaf's module.
+  When the namespace does not resolve to a compiled module (e.g. a module the
+  document references only through such a value), the check stays **silent**
+  rather than reporting a false "unknown identity". In JSON (RFC 7951) the
+  value is `module-name:identity`; it is checked when that module is compiled
+  and skipped otherwise.
 - **Deliberately not checked**: `union` values (RFC 7950 §9.12 — a bare value
   can't be attributed to one member), `leafref`s, and types that don't resolve
   to a scalar builtin.
@@ -38,6 +49,9 @@ the module schema, and inserting typed defaults when you complete a leaf.
 - **Implementation**: `src/valcheck.rs` (scalar classification/facets from
   `yrepo` — `TypeFacets`/`ValueType`, `resolve_type`); wired into instance
   diagnostics (`netconf_bad_value`/`json_bad_value`) and completion defaults.
+  XML identityref values are rewritten to `module:local` via the element's
+  in-scope XML namespace declarations (`XmlDoc::in_scope_ns`, see
+  `src/xml.rs`) before the `yrepo` semantic check.
 - **Coupling**: shares `yrepo` type resolution with YANG completion and
   goto/hover.
 - **Tests**: `src/valcheck.rs` unit tests + `yrepo` type/value tests.

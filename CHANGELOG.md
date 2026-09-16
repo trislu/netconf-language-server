@@ -48,6 +48,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under `<get>`/`<get-config>` is also recognized as a partial-content filter
   (previously only a document-root `<filter>` was), so the newly mapped subtree
   raises no false missing key/mandatory diagnostics.
+- **`identityref` values in XML are resolved through their XML namespace
+  context.** An identityref value's prefix is an **XML namespace prefix**
+  (RFC 7950 §9.10.3), declared on the element or inherited from an ancestor,
+  and an unprefixed value is in the in-scope default namespace — not a YANG
+  import prefix. The validator handed the raw text to the semantic check, so a
+  valid value such as `ianaift:ethernetCsmacd` (with `xmlns:ianaift` bound to
+  the identity's module) was reported as an unknown identity. Identityref
+  values are now rewritten to `module:local` via the element's in-scope
+  declarations (and the referenced module is seeded into the schema), and the
+  check stays **silent** when the namespace does not resolve to a compiled
+  module instead of emitting a false "unknown identity". The JSON (RFC 7951)
+  path is conservative the same way when the value's module is not compiled.
 
 ## [0.7.0] - 2026-09-11
 

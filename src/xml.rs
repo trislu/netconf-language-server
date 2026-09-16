@@ -49,6 +49,16 @@ impl XmlRoot {
 // Full instance tree (M1+)
 // ---------------------------------------------------------------------------
 
+/// One namespace declaration written on an element: `xmlns="uri"`
+/// (`prefix: None`) or `xmlns:prefix="uri"`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NsDecl {
+    /// `None` for the default `xmlns`, `Some(p)` for `xmlns:p`.
+    pub prefix: Option<String>,
+    /// Declared namespace URI.
+    pub uri: String,
+}
+
 /// One element of an XML instance document.
 #[derive(Debug, Clone)]
 pub struct XmlNode {
@@ -62,6 +72,10 @@ pub struct XmlNode {
     pub local: String,
     /// Resolved namespace URI of this element (in-scope default/prefix).
     pub ns: Option<String>,
+    /// Namespace declarations written on this element (`xmlns`/`xmlns:p`), in
+    /// source order. A value QName such as an XML-encoded `identityref`
+    /// resolves its prefix against these plus its ancestors' declarations.
+    pub own_ns: Vec<NsDecl>,
     /// Byte range of the element's **name** in the start tag.
     pub name_range: Range<usize>,
     /// Byte range of the whole element (start tag through end tag).
@@ -90,6 +104,25 @@ impl XmlDoc {
             }
         }
         best
+    }
+
+    /// The URI bound to the XML prefix `prefix` on element `elem` or its nearest
+    /// ancestor (the nearest declaration wins; undeclared prefix → `None`).
+    /// `prefix: None` asks for the default namespace in effect (`xmlns`), which
+    /// is what an unprefixed instance value QName is interpreted in per
+    /// RFC 7950 §9.10.3.
+    pub fn in_scope_ns(&self, elem: usize, prefix: Option<&str>) -> Option<&str> {
+        let mut cur = Some(elem);
+        while let Some(i) = cur {
+            let n = self.nodes.get(i)?;
+            for d in n.own_ns.iter().rev() {
+                if d.prefix.as_deref() == prefix {
+                    return Some(d.uri.as_str());
+                }
+            }
+            cur = n.parent;
+        }
+        None
     }
 
     /// The trimmed text content of a **leaf** element `i` (one with no child
@@ -217,6 +250,26 @@ fn apply_ns(scope: &NsScope, attrs: &[(String, String)]) -> NsScope {
     out
 }
 
+/// The `xmlns`/`xmlns:p` declarations among a start tag's attributes.
+fn ns_decls(attrs: &[(String, String)]) -> Vec<NsDecl> {
+    attrs
+        .iter()
+        .filter_map(|(name, value)| {
+            if name == "xmlns" {
+                Some(NsDecl {
+                    prefix: None,
+                    uri: value.clone(),
+                })
+            } else {
+                name.strip_prefix("xmlns:").map(|p| NsDecl {
+                    prefix: Some(p.to_owned()),
+                    uri: value.clone(),
+                })
+            }
+        })
+        .collect()
+}
+
 fn build_element(
     el: Node<'_>,
     parent: Option<usize>,
@@ -227,6 +280,7 @@ fn build_element(
     let start = child_of(el, "STag").or_else(|| child_of(el, "EmptyElemTag"))?;
     let (name, attrs) = read_start_tag(start, text)?;
     // The element's own xmlns declarations apply to itself and descendants.
+    let own_ns = ns_decls(&attrs);
     let scope = apply_ns(&scope, &attrs);
     let name_node = child_of(start, "Name")?;
     let idx = nodes.len();
@@ -237,6 +291,7 @@ fn build_element(
         elem_range: el.byte_range(),
         local: name.rsplit(':').next().unwrap_or(&name).to_owned(),
         ns: scope.resolve(&name),
+        own_ns,
         name,
     });
     // Direct child elements live in the <content> node of a non-empty element.
@@ -392,5 +447,32 @@ mod tests {
             ("urn:a", "urn:a", "urn:c", "urn:c", "urn:a")
         );
         assert!(n[2].name_range.end <= n[2].elem_range.end);
+    }
+
+    #[test]
+    fn value_prefixes_resolve_through_ancestor_declarations() {
+        // An identityref value's prefix is an XML namespace prefix (RFC 7950
+        // §9.10.3) declared on the element itself or any ancestor.
+        let doc = parse(
+            r#"<a xmlns:p="urn:p">
+  <b xmlns:q="urn:q"><c/></b>
+</a>"#,
+        )
+        .expect("parses");
+        let c = doc.nodes.iter().position(|n| n.local == "c").expect("c");
+        assert_eq!(doc.in_scope_ns(c, Some("p")), Some("urn:p"));
+        assert_eq!(doc.in_scope_ns(c, Some("q")), Some("urn:q"));
+        assert_eq!(doc.in_scope_ns(c, Some("missing")), None);
+        // No default declaration anywhere.
+        assert_eq!(doc.in_scope_ns(c, None), None);
+    }
+
+    #[test]
+    fn default_namespace_rebinding_is_nearest_first() {
+        let doc = parse(r#"<a xmlns="urn:1"><b xmlns="urn:2"><c/></b></a>"#).expect("parses");
+        let a = 0;
+        let c = doc.nodes.iter().position(|n| n.local == "c").expect("c");
+        assert_eq!(doc.in_scope_ns(a, None), Some("urn:1"));
+        assert_eq!(doc.in_scope_ns(c, None), Some("urn:2"));
     }
 }

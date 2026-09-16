@@ -12,7 +12,7 @@
 
 use std::ops::Range;
 
-use yrepo::{Library, NodeKind, SchemaNode};
+use yrepo::{Library, NodeKind, SchemaNode, ValueType};
 
 use crate::depth;
 use crate::inst::{NETCONF_BASE_NS, NETCONF_NOTIFICATION_NS};
@@ -400,6 +400,40 @@ fn filter_mask(doc: &XmlDoc) -> Vec<bool> {
     in_filter
 }
 
+/// How an XML reference value should be judged.
+enum RefValue {
+    /// Check this text (a canonical `module:local` for an identityref).
+    Text(String),
+    /// The value's namespace does not resolve to a compiled module: stay silent
+    /// rather than report an "unknown identity" that is really a missing lazy
+    /// schema.
+    Skip,
+}
+
+/// Rewrite an XML `identityref` value into yrepo's `module:local` form using the
+/// containing element's in-scope XML namespace context: a prefix is an **XML**
+/// namespace prefix (declared on the element or an ancestor), and an unprefixed
+/// value lives in the default namespace in effect on the element (RFC 7950
+/// §9.10.3). A malformed value is returned as-is so the shared checker reports
+/// its shape.
+fn resolve_xml_identityref(doc: &XmlDoc, lib: &Library, elem: usize, raw: &str) -> RefValue {
+    let v = raw.trim();
+    if v.is_empty() || v.split_whitespace().count() > 1 || v.split(':').count() > 2 {
+        return RefValue::Text(v.to_owned());
+    }
+    let (prefix, local) = match v.split_once(':') {
+        Some((p, l)) => (Some(p), l),
+        None => (None, v),
+    };
+    let Some(uri) = doc.in_scope_ns(elem, prefix) else {
+        return RefValue::Skip;
+    };
+    let Some(module) = lib.modules().iter().find(|m| m.namespace() == Some(uri)) else {
+        return RefValue::Skip;
+    };
+    RefValue::Text(format!("{}:{}", module.name(), local))
+}
+
 /// M5 leaf *value* validation over a whole document (best effort, D31): for
 /// every mapped **leaf**/leaf-list element whose type reduces to a checked
 /// scalar, evaluate its text content against the resolved [`yrepo::ValueType`].
@@ -429,6 +463,17 @@ pub fn value_diags(doc: &XmlDoc, text: &str, lib: &Library) -> Vec<InstDiag> {
         };
         let Some((range, value)) = doc.leaf_text(text, i) else {
             continue;
+        };
+        // An XML `identityref` value names its module through an XML namespace
+        // prefix or the in-scope default namespace (RFC 7950 §9.10.3), not a
+        // YANG prefix. Rewrite it to yrepo's `module:local` form; when the
+        // namespace does not resolve to a compiled module, do not judge it.
+        let value = match &vt {
+            ValueType::Identityref { .. } => match resolve_xml_identityref(doc, lib, i, &value) {
+                RefValue::Text(v) => v,
+                RefValue::Skip => continue,
+            },
+            _ => value,
         };
         if let Some(msg) = crate::valcheck::check_value(lib, &res.module, &vt, &value) {
             diags.push(InstDiag {
@@ -505,6 +550,87 @@ mod tests {
         repo.upsert("/if.yang", MOD_IF);
         repo.upsert("/ietf-netconf.yang", MOD_NETCONF);
         repo.compile().library.expect("library")
+    }
+
+    /// Identity fixtures: `va` declares the identityref base and the leaf, `vb`
+    /// derives an identity from it in another module.
+    const MOD_ID_A: &str = r#"module va {
+  yang-version 1.1;
+  namespace "urn:va";
+  prefix va;
+  revision 2026-01-01;
+  identity base-id;
+  identity lone;
+  container box { leaf id { type identityref { base base-id; } } }
+}"#;
+    const MOD_ID_B: &str = r#"module vb {
+  yang-version 1.1;
+  namespace "urn:vb";
+  prefix vb;
+  revision 2026-01-01;
+  import va { prefix va; }
+  identity derived { base va:base-id; }
+}"#;
+
+    fn compile_ids() -> Arc<Library> {
+        let mut repo = Repository::new();
+        repo.upsert("/va.yang", MOD_ID_A);
+        repo.upsert("/vb.yang", MOD_ID_B);
+        repo.compile().library.expect("library")
+    }
+
+    fn bad_values(lib: &Library, text: &str) -> Vec<InstDiag> {
+        let doc = parse(text).expect("parse");
+        value_diags(&doc, text, lib)
+            .into_iter()
+            .filter(|d| d.code == "netconf_bad_value")
+            .collect()
+    }
+
+    #[test]
+    fn xml_identityref_resolves_prefix_through_xmlns_context() {
+        let lib = compile_ids();
+        // The XML prefix `z` is bound to `vb`'s namespace on the leaf element;
+        // `derived` derives from `va`'s `base-id`, so the value is valid — even
+        // though `z` is not a YANG prefix of `va`.
+        let on_leaf = r#"<box xmlns="urn:va"><id xmlns:z="urn:vb">z:derived</id></box>"#;
+        assert!(
+            bad_values(&lib, on_leaf).is_empty(),
+            "{:?}",
+            bad_values(&lib, on_leaf)
+        );
+        // The same binding declared on an ancestor is inherited.
+        let inherited = r#"<box xmlns="urn:va" xmlns:z="urn:vb"><id>z:derived</id></box>"#;
+        assert!(bad_values(&lib, inherited).is_empty());
+        // The unprefixed form uses the element's in-scope default namespace.
+        let defaulted = r#"<box xmlns="urn:va"><id>base-id</id></box>"#;
+        assert!(
+            bad_values(&lib, defaulted).is_empty(),
+            "base itself is valid"
+        );
+        let other_default = r#"<box xmlns="urn:va"><id xmlns="urn:vb">derived</id></box>"#;
+        assert!(
+            bad_values(&lib, other_default).is_empty(),
+            "default ns wins over the leaf's module"
+        );
+        // A genuinely unknown identity in a compiled module is still flagged, as
+        // is an existing identity that does not derive from the base.
+        assert_eq!(
+            bad_values(
+                &lib,
+                r#"<box xmlns="urn:va"><id xmlns:z="urn:vb">z:nope</id></box>"#
+            )
+            .len(),
+            1
+        );
+        assert_eq!(
+            bad_values(&lib, r#"<box xmlns="urn:va"><id>lone</id></box>"#).len(),
+            1
+        );
+        // An unresolvable namespace stays silent: no false "unknown identity".
+        let unresolved =
+            r#"<box xmlns="urn:va"><id xmlns:z="urn:not-compiled">z:whatever</id></box>"#;
+        assert!(bad_values(&lib, unresolved).is_empty());
     }
 
     fn find(doc: &XmlDoc, local: &str) -> usize {
@@ -979,8 +1105,10 @@ mod tests {
         repo.upsert("/iv.yang", src);
         let lib = repo.compile().library.expect("library");
 
-        // Derived identity → no value diagnostic.
-        let text = r#"<c xmlns="urn:iv"><ref>iv:child</ref></c>"#;
+        // Derived identity → no value diagnostic. The value prefix is an XML
+        // namespace prefix (RFC 7950 §9.10.3), so it is declared here even
+        // though it matches the module's YANG prefix.
+        let text = r#"<c xmlns="urn:iv" xmlns:iv="urn:iv"><ref>iv:child</ref></c>"#;
         let doc = parse(text).expect("parse");
         let diags = value_diags(&doc, text, &lib);
         assert!(
@@ -989,7 +1117,7 @@ mod tests {
             diags
         );
         // Not derived from `base`.
-        let text = r#"<c xmlns="urn:iv"><ref>iv:other</ref></c>"#;
+        let text = r#"<c xmlns="urn:iv" xmlns:iv="urn:iv"><ref>iv:other</ref></c>"#;
         let doc = parse(text).expect("parse");
         let diags = value_diags(&doc, text, &lib);
         assert!(
@@ -1000,7 +1128,7 @@ mod tests {
             diags
         );
         // Unknown identity.
-        let text = r#"<c xmlns="urn:iv"><ref>iv:nope</ref></c>"#;
+        let text = r#"<c xmlns="urn:iv" xmlns:iv="urn:iv"><ref>iv:nope</ref></c>"#;
         let doc = parse(text).expect("parse");
         let diags = value_diags(&doc, text, &lib);
         assert!(

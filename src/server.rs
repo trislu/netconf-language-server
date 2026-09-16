@@ -261,7 +261,7 @@ impl Server {
         let rope = self.rope_for(uri).await?;
         let text = rope.to_string();
         let xdoc = crate::xml::parse(&text)?;
-        let namespaces = distinct_element_namespaces(&xdoc);
+        let namespaces = distinct_instance_namespaces(&xdoc);
         let _ = self.ensure_instance_namespaces(uri, &namespaces).await;
         let lib = self.snapshot().await.lib?;
         Some((rope, xdoc, lib))
@@ -897,17 +897,20 @@ fn forget_instance_module(map: &mut HashMap<String, BTreeSet<String>>, uri: &str
     map.remove(uri).is_some()
 }
 
-/// The distinct resolved namespaces of an XML document's elements — the modules
-/// a document references (its envelope, each data root, and every augmenting
-/// module). A document uses a handful of namespaces, so this is a cheap bounded
-/// scan; the result is sorted so seeding is deterministic (order is immaterial
-/// to the closure).
-fn distinct_element_namespaces(doc: &crate::xml::XmlDoc) -> Vec<String> {
+/// The distinct namespace URIs an XML document references: every element's
+/// effective namespace **plus every `xmlns`/`xmlns:p` declaration it writes**.
+/// The declarations matter because a value QName (an XML-encoded `identityref`)
+/// can name a module no element belongs to, and that module must still be
+/// compiled to validate the value. A document writes a handful of namespaces,
+/// so this is a cheap bounded scan; the result is sorted so seeding is
+/// deterministic (order is immaterial to the closure).
+fn distinct_instance_namespaces(doc: &crate::xml::XmlDoc) -> Vec<String> {
     let mut out = BTreeSet::new();
     for n in &doc.nodes {
         if let Some(ns) = &n.ns {
             out.insert(ns.clone());
         }
+        out.extend(n.own_ns.iter().map(|d| d.uri.clone()));
     }
     out.into_iter().collect()
 }
@@ -1785,7 +1788,7 @@ impl LanguageServer for Server {
 #[cfg(test)]
 mod tests {
     use super::{
-        BTreeSet, HashMap, distinct_element_namespaces, distinct_member_modules,
+        BTreeSet, HashMap, distinct_instance_namespaces, distinct_member_modules,
         forget_instance_module, note_instance_module,
     };
 
@@ -1853,17 +1856,23 @@ mod tests {
     }
 
     #[test]
-    fn distinct_element_namespaces_are_deduplicated() {
+    fn distinct_instance_namespaces_include_declared_prefixes() {
+        // `urn:extra` is only a prefix declaration (no element is in it), but a
+        // value QName can point into it, so it must be seeded too.
         let doc = crate::xml::parse(
-            r#"<config xmlns="urn:netconf">
+            r#"<config xmlns="urn:netconf" xmlns:ext="urn:extra">
   <interfaces xmlns="urn:if"><interface/></interfaces>
   <alias xmlns="urn:netconf"/>
 </config>"#,
         )
         .expect("xml");
         assert_eq!(
-            distinct_element_namespaces(&doc),
-            vec!["urn:if".to_owned(), "urn:netconf".to_owned()]
+            distinct_instance_namespaces(&doc),
+            vec![
+                "urn:extra".to_owned(),
+                "urn:if".to_owned(),
+                "urn:netconf".to_owned()
+            ]
         );
     }
 

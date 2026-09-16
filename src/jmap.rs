@@ -6,14 +6,14 @@
 //! namespace differs from the parent's (bare = same module as the parent
 //! member).
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::ops::Range;
 
 use yrepo::{Library, NodeKind, SchemaNode, ValueType};
 
 use crate::depth;
 use crate::inst_map::{InstDiag, Resolved};
-use crate::json::{JsonDoc, JsonVal};
+use crate::json::{JsonDoc, JsonMember, JsonVal};
 
 /// Result of mapping all members of a JSON document.
 #[derive(Debug, Clone)]
@@ -358,14 +358,7 @@ pub fn value_diags(doc: &JsonDoc, text: &str, lib: &Library) -> Vec<InstDiag> {
             continue;
         };
         // A leaf has one value; a leaf-list has one value per scalar element.
-        let ranges: Vec<Range<usize>> = match node.kind() {
-            NodeKind::Leaf => vec![member.value_range.clone()],
-            _ => member
-                .scalar_items
-                .clone()
-                .unwrap_or_else(|| vec![member.value_range.clone()]),
-        };
-        for range in ranges {
+        for range in member_value_ranges(member, node.kind()) {
             let Some(raw) = text.get(range.clone()) else {
                 continue;
             };
@@ -390,6 +383,55 @@ pub fn value_diags(doc: &JsonDoc, text: &str, lib: &Library) -> Vec<InstDiag> {
         }
     }
     diags
+}
+
+/// The byte ranges of a member's value(s): one for a `leaf`, one per scalar item
+/// for a `leaf-list`.
+fn member_value_ranges(member: &JsonMember, kind: NodeKind) -> Vec<Range<usize>> {
+    match kind {
+        NodeKind::Leaf => vec![member.value_range.clone()],
+        _ => member
+            .scalar_items
+            .clone()
+            .unwrap_or_else(|| vec![member.value_range.clone()]),
+    }
+}
+
+/// The distinct modules named by RFC 7951 `identityref` member values that are
+/// **not compiled yet**. An identityref value is `module-name:identity-name`
+/// (RFC 7951 §6.8), so the caller can seed those modules and let the semantic
+/// check run instead of skipping it as a lazy-schema artifact. Returns an empty
+/// list when the document has no cross-module identityref value.
+pub fn identityref_value_modules(doc: &JsonDoc, text: &str, lib: &Library) -> Vec<String> {
+    let map = map(doc, lib);
+    let mut out = BTreeSet::new();
+    for (m, member) in doc.members.iter().enumerate() {
+        let Some(Some(res)) = map.res.get(m) else {
+            continue;
+        };
+        let Some(node) = lib.module(&res.module).and_then(|rec| rec.node(res.id)) else {
+            continue;
+        };
+        let Some(vt) = lib.value_type(&res.module, res.id) else {
+            continue;
+        };
+        if !matches!(vt, ValueType::Identityref { .. }) {
+            continue;
+        }
+        for range in member_value_ranges(member, node.kind()) {
+            let Some(raw) = text.get(range) else {
+                continue;
+            };
+            let value = json_value(&vt, raw);
+            if let Some((module, _)) = value.trim().split_once(':')
+                && !module.is_empty()
+                && lib.module(module).is_none()
+            {
+                out.insert(module.to_owned());
+            }
+        }
+    }
+    out.into_iter().collect()
 }
 
 /// Decode an RFC 7951 member value into the canonical text that
@@ -721,32 +763,40 @@ mod tests {
         assert_eq!(bad[0].range, items[1], "{:?}", bad[0]);
     }
 
-    #[test]
-    fn identityref_values_checked_semantically() {
-        let src = r#"module jiv {
+    const JIV: &str = r#"module jiv {
   yang-version 1.1;
   namespace "urn:jiv";
   prefix jiv;
   revision 2026-01-01;
   identity base;
-  identity child { base base; }
   identity other;
   container c {
     leaf ref { type identityref { base base; } }
   }
 }"#;
+    const JCHILD: &str = r#"module jchild {
+  yang-version 1.1;
+  namespace "urn:jchild";
+  prefix jc;
+  revision 2026-01-01;
+  import jiv { prefix jiv; }
+  identity derived { base jiv:base; }
+}"#;
+
+    #[test]
+    fn identityref_values_checked_semantically() {
         let mut repo = Repository::new();
-        repo.upsert("/jiv.yang", src);
+        repo.upsert("/jiv.yang", JIV);
+        repo.upsert("/jchild.yang", JCHILD);
         let lib = repo.compile().library.expect("library");
 
-        // Derived identity → valid.
-        let text = r#"{ "jiv:c": { "ref": "jiv:child" } }"#;
+        // A cross-module derived identity (RFC 7951 `module:name`) → valid.
+        let text = r#"{ "jiv:c": { "ref": "jchild:derived" } }"#;
         let doc = parse(text).expect("parse");
-        let diags = value_diags(&doc, text, &lib);
         assert!(
-            !diags.iter().any(|d| d.code == "json_bad_value"),
-            "{:?}",
-            diags
+            !value_diags(&doc, text, &lib)
+                .iter()
+                .any(|d| d.code == "json_bad_value")
         );
         // Not derived from `base`.
         let text = r#"{ "jiv:c": { "ref": "jiv:other" } }"#;
@@ -759,5 +809,40 @@ mod tests {
             "{:?}",
             diags
         );
+        // Unknown identity in a compiled module.
+        let text = r#"{ "jiv:c": { "ref": "jchild:nope" } }"#;
+        let doc = parse(text).expect("parse");
+        let diags = value_diags(&doc, text, &lib);
+        assert!(
+            diags.iter().any(|d| d.message.contains("unknown identity")),
+            "{:?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn identityref_value_modules_lists_uncompiled_value_modules() {
+        // `jchild` is not ingested: its namespace is named only by the value.
+        let mut repo = Repository::new();
+        repo.upsert("/jiv.yang", JIV);
+        let lib = repo.compile().library.expect("library");
+        let text = r#"{ "jiv:c": { "ref": "jchild:derived" } }"#;
+        let doc = parse(text).expect("parse");
+        assert_eq!(
+            identityref_value_modules(&doc, text, &lib),
+            vec!["jchild".to_owned()]
+        );
+        // With the value's module uncompiled, the check is skipped, not wrong.
+        assert!(
+            !value_diags(&doc, text, &lib)
+                .iter()
+                .any(|d| d.code == "json_bad_value")
+        );
+        // Once it is compiled, nothing is left to seed.
+        let mut repo = Repository::new();
+        repo.upsert("/jiv.yang", JIV);
+        repo.upsert("/jchild.yang", JCHILD);
+        let lib = repo.compile().library.expect("library");
+        assert!(identityref_value_modules(&doc, text, &lib).is_empty());
     }
 }

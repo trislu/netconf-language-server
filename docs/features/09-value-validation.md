@@ -29,8 +29,9 @@ the module schema, and inserting typed defaults when you complete a leaf.
   When the namespace does not resolve to a compiled module (e.g. a module the
   document references only through such a value), the check stays **silent**
   rather than reporting a false "unknown identity". In JSON (RFC 7951) the
-  value is `module-name:identity`; it is checked when that module is compiled
-  and skipped otherwise.
+  value is `module-name:identity`; the server seeds that module (when the
+  workspace declares it) so the value is checked too, and stays silent only
+  when the module cannot be compiled.
 - **Deliberately not checked**: `union` values (RFC 7950 §9.12 — a bare value
   can't be attributed to one member), `leafref`s, and types that don't resolve
   to a scalar builtin.

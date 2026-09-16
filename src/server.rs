@@ -393,6 +393,11 @@ impl Server {
     /// root qualifier left nested completion/hover/goto blind to the other
     /// modules; a member written bare keeps its parent's module, which is
     /// seeded by the enclosing qualifier.
+    ///
+    /// A second pass seeds the modules named by `identityref` **values**
+    /// (`module:name`): unlike an XML value's namespace, such a module appears
+    /// nowhere in the document's member qualifiers, so it would otherwise stay
+    /// uncompiled and its value check would be skipped.
     async fn json_ctx(
         &self,
         uri: &str,
@@ -401,8 +406,16 @@ impl Server {
         let text = rope.to_string();
         let jdoc = crate::json::parse(&text)?;
         let modules = distinct_member_modules(&jdoc);
-        let _ = self.ensure_instance_modules(uri, &modules).await;
-        let lib = self.snapshot().await.lib?;
+        let mut lib = self.ensure_instance_modules(uri, &modules).await;
+        if let Some(current) = lib.as_ref() {
+            let extra = crate::jmap::identityref_value_modules(&jdoc, &text, current);
+            if !extra.is_empty()
+                && let Some(next) = self.ensure_known_instance_modules(uri, &extra).await
+            {
+                lib = Some(next);
+            }
+        }
+        let lib = lib?;
         Some((rope, jdoc, lib))
     }
 
@@ -708,6 +721,26 @@ impl Server {
             self.sync_open_closure().await;
         }
         self.snapshot().await.lib
+    }
+
+    /// Seed the named modules that the workspace summary index knows, then
+    /// return the compiled library. Used for RFC 7951 `identityref` values,
+    /// which name their module directly (`module:name`); the index filter keeps
+    /// a bogus value from seeding — and later logging — a module that cannot
+    /// exist. Returns `None` when there is no workspace root.
+    async fn ensure_known_instance_modules(
+        &self,
+        uri: &str,
+        names: &[String],
+    ) -> Option<Arc<Library>> {
+        let index = self.ensure_summary_index().await?;
+        let known: HashSet<&str> = index.summaries().map(|s| s.name.as_str()).collect();
+        let modules: Vec<String> = names
+            .iter()
+            .filter(|n| known.contains(n.as_str()))
+            .cloned()
+            .collect();
+        self.ensure_instance_modules(uri, &modules).await
     }
 
     /// Build the parse-free startup index: walk the workspace and map each

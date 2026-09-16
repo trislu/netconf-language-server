@@ -59,7 +59,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   declarations (and the referenced module is seeded into the schema), and the
   check stays **silent** when the namespace does not resolve to a compiled
   module instead of emitting a false "unknown identity". The JSON (RFC 7951)
-  path is conservative the same way when the value's module is not compiled.
+  path resolves `module-name:identity` the same way and seeds the value's
+  module into the schema, so cross-module identityref values are checked in
+  both encodings (silent only when the module cannot be compiled).
 
 ## [0.7.0] - 2026-09-11
 

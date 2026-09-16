@@ -14,6 +14,11 @@ pub const NETCONF_BASE_NS: &str = "urn:ietf:params:xml:ns:netconf:base:1.0";
 pub const NETCONF_NOTIFICATION_NS: &str = "urn:ietf:params:xml:ns:netconf:notification:1.0";
 
 /// Schema summary the classifier needs per compiled module.
+///
+/// The three name lists are exactly what the instance-document *completion*
+/// positions need: top-level data nodes for a payload wrapper (`<config>`,
+/// `<filter>`), and top-level `rpc`/`notification` names for the `<rpc>`
+/// operation envelope.
 #[derive(Debug, Clone)]
 pub struct ModuleInfo {
     /// Module name.
@@ -22,6 +27,10 @@ pub struct ModuleInfo {
     pub namespace: String,
     /// Names of the module's **top-level data nodes** (not rpc/notification).
     pub top_data: Vec<String>,
+    /// Names of the module's top-level `rpc`s.
+    pub rpcs: Vec<String>,
+    /// Names of the module's top-level `notification`s.
+    pub notifications: Vec<String>,
 }
 
 /// How an instance document is interpreted.
@@ -103,11 +112,15 @@ mod tests {
                 name: "ietf-interfaces".to_owned(),
                 namespace: "urn:ietf:params:xml:ns:yang:ietf-interfaces".to_owned(),
                 top_data: vec!["interfaces".to_owned(), "interfaces-state".to_owned()],
+                rpcs: Vec::new(),
+                notifications: Vec::new(),
             },
             ModuleInfo {
                 name: "example-demo".to_owned(),
                 namespace: "urn:example:demo".to_owned(),
                 top_data: vec!["system".to_owned()],
+                rpcs: vec!["reset".to_owned()],
+                notifications: Vec::new(),
             },
         ]
     }

@@ -5,7 +5,7 @@
 //! data↔schema resolver (data_children / data_child / schema_nodeid over a
 //! snapshot) is consumed directly from `yrepo` in M1.
 
-use yrepo::{Library, SummaryIndex};
+use yrepo::{Library, NodeKind, SummaryIndex};
 
 use crate::inst::ModuleInfo;
 
@@ -15,33 +15,43 @@ pub fn module_summaries(lib: &Library) -> Vec<ModuleInfo> {
         .iter()
         .filter_map(|m| {
             let namespace = m.namespace()?.to_owned();
-            let top_data = m
-                .top_nodes()
-                .iter()
-                .filter_map(|&id| {
-                    let n = m.node(id)?;
-                    if n.kind().is_data() {
-                        Some(n.name().to_owned())
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+            let (top_data, rpcs, notifications) = top_names(m);
             Some(ModuleInfo {
                 name: m.name().to_owned(),
                 namespace,
                 top_data,
+                rpcs,
+                notifications,
             })
         })
         .collect()
+}
+
+/// The top-level names of a compiled module, split the way the completion
+/// positions need them: data nodes, `rpc`s, `notification`s.
+fn top_names(m: &yrepo::ModuleRecord) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let mut top_data = Vec::new();
+    let mut rpcs = Vec::new();
+    let mut notifications = Vec::new();
+    for &id in m.top_nodes() {
+        let Some(n) = m.node(id) else { continue };
+        let name = n.name().to_owned();
+        match n.kind() {
+            NodeKind::Rpc => rpcs.push(name),
+            NodeKind::Notification => notifications.push(name),
+            k if k.is_data() => top_data.push(name),
+            _ => {}
+        }
+    }
+    (top_data, rpcs, notifications)
 }
 
 /// Summaries of every indexed module from the Tier-1 [`SummaryIndex`] (the
 /// parse-free-of-compile fallback used when no compiled library exists yet).
 ///
 /// Same [`ModuleInfo`] shape as [`module_summaries`]: submodules (no
-/// namespace) are skipped, and `top_data` are exactly the summary's top-level
-/// data-node names (rpcs/notifications are carried separately by the index).
+/// namespace) are skipped, and the three name lists are exactly the summary's
+/// top-level data/rpc/notification names.
 pub fn module_summaries_from_summary(index: &SummaryIndex) -> Vec<ModuleInfo> {
     index
         .summaries()
@@ -51,6 +61,8 @@ pub fn module_summaries_from_summary(index: &SummaryIndex) -> Vec<ModuleInfo> {
                 name: s.name.clone(),
                 namespace,
                 top_data: s.top_data.clone(),
+                rpcs: s.rpcs.clone(),
+                notifications: s.notifications.clone(),
             })
         })
         .collect()
@@ -61,7 +73,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn summaries_projection_keeps_namespace_and_top_data_only() {
+    fn summaries_projection_keeps_namespace_and_top_names() {
         let dir = std::env::temp_dir().join(format!(
             "ncls-schema-idx-{}-{}",
             std::process::id(),
@@ -107,6 +119,8 @@ mod tests {
             vec!["system".to_owned(), "flag".to_owned()],
             "only top-level data nodes (no rpc/notification)"
         );
+        assert_eq!(demo.rpcs, vec!["reset".to_owned()]);
+        assert_eq!(demo.notifications, vec!["alarm".to_owned()]);
         assert!(
             !infos.iter().any(|m| m.name == "demo-sub"),
             "a submodule has no namespace and is skipped: {infos:?}"

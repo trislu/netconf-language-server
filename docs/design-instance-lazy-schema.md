@@ -15,8 +15,19 @@ that already has a root triggers a whole-tree parse-level **summary scan**
 (yrepo `SummaryIndex`): module name, namespace, revision, top-level
 data/rpc/notification names. It is single-flight, progress-visible
 (`client::Progress`), cached, and invalidated like `refidx` when disk content may
-have changed. Completion for the root position is served from these summaries;
-nested positions without a compiled schema return nothing.
+have changed. The two XML positions whose children are the **workspace-wide**
+set are served from these summaries — they can never be answered by one
+module's closure:
+
+- a **payload wrapper** (`<config>`, `<filter>`; at the document root or nested
+  under `<edit-config>`/`<get-config>`) → every summarized module's top-level
+  data roots;
+- the root `<rpc>` envelope → the built-in NETCONF operations plus every
+  summarized module's top-level `rpc`/`notification` (the summary index carries
+  those names too, so `ModuleInfo` has `top_data`/`rpcs`/`notifications`).
+
+Any other (mapped) position without a compiled schema returns nothing; `<data>`
+is not a position at all (server-side `<rpc-reply>` output).
 
 **Tier 2 — per-module open closure (everything else).**
 Once a root namespace is known (the user typed/picked a root, or the parsed
@@ -32,7 +43,7 @@ snapshot, and serve diagnostics/hover/goto/nested completion with the existing
 | --- | --- |
 | `schema_idx::module_summaries(lib)` | keep; add `module_summaries_from_summary(&SummaryIndex) -> Vec<ModuleInfo>` (same shape: name/namespace/top_data) |
 | `Server.classify` | when `snapshot().lib` is `None`, fall back to the summary index so valid NETCONF docs are no longer reported `NotNetconf` |
-| `xcomp::handle` / `jcomp::handle` | add a summaries-only entry (root data roots + NETCONF operations); `Library` path unchanged |
+| `xcomp::handle` / `jcomp::handle` | add a summaries-only entry (payload-wrapper + `<rpc>` children); `Library` path unchanged (its closure-only roots are the no-summary fallback) |
 | `xml_ctx` / `json_ctx` | if `lib` is `None`, parse the document root, resolve its namespace via Tier 1, materialize that module (Tier 2), then proceed |
 | `Server` state | `summary: RwLock<Option<Arc<SummaryIndex>>>`, `summary_build: Mutex<()>` (mirror `refidx`), invalidation next to `invalidate_refidx` |
 | references/rename | unchanged: they keep their own lazy `ReferenceIndex` and are YANG-only |

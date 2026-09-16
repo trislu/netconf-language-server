@@ -1,17 +1,28 @@
 //! XML writing — completion (M2).
 //!
 //! Offers the data nodes that may validly appear at the caret as snippet
-//! completions, resolved through the instance→schema mapping:
+//! completions. The caret's **parent element** decides which position it is:
 //!
-//! - inside the *content* of a mapped container/list (or a `<config>` payload
-//!   wrapper) → its child data nodes (via `choice`/`case` flattening);
+//! - a NETCONF **payload wrapper** — `<config>` (the `edit-config` payload, at
+//!   the document root or nested under `<edit-config>`) or `<filter>` — holds
+//!   the top-level data roots of **every** module. No single-module compiled
+//!   library can answer that (it holds only the open closure), so the position
+//!   is served from the workspace-wide summary index (Tier 1);
+//! - the `<rpc>` operation envelope holds operations: the built-in NETCONF
+//!   ones plus every module's top-level `rpc`/`notification`;
+//! - inside the *content* of a mapped container/list → its child data nodes
+//!   (via `choice`/`case` flattening), resolved through the instance→schema
+//!   mapping;
 //! - after typing `<` inside a parent → the same children, as start-tag names;
-//! - under `<rpc>` → compiled module RPCs/notifications + the built-in NETCONF
-//!   operations;
 //! - list entries auto-include their `key` leafs as placeholders;
 //! - when a child lives in a different namespace than the parent's in-scope
 //!   default, an `xmlns="…"` declaration is emitted so the fragment is
 //!   self-contained.
+//!
+//! `<data>` is deliberately **not** a position: it only ever appears in a
+//! server's `<rpc-reply>`, so nobody authors inside one. The instance
+//! *mapping* still treats it as a payload wrapper, so a captured reply is
+//! still mapped and validated.
 
 use tower_lsp_server::ls_types::{CompletionItem, CompletionItemKind, InsertTextFormat};
 use yrepo::{Library, NodeKind};
@@ -19,6 +30,7 @@ use yrepo::{Library, NodeKind};
 use crate::inst::{ModuleInfo, NETCONF_BASE_NS};
 use crate::inst_map::{Resolved, map_doc};
 use crate::valcheck::{self, DefaultValue};
+use crate::xml::XmlNode;
 
 /// One completable child data node.
 struct Child {
@@ -54,6 +66,26 @@ const NETCONF_OPS: &[&str] = &[
 
 fn is_leaf(kind: NodeKind) -> bool {
     matches!(kind, NodeKind::Leaf | NodeKind::LeafList)
+}
+
+/// Whether `p` is a NETCONF **payload wrapper**: its children are the
+/// top-level data nodes of *any* module, not the schema children of a mapped
+/// node.
+///
+/// - `<config>` — the `edit-config` payload, at the document root or nested
+///   under `<edit-config>`;
+/// - `<filter>` — the `get`/`get-config` selection filter (partial content).
+///
+/// `<data>` is deliberately absent: it only ever appears in a server's
+/// `<rpc-reply>` (see the module docs).
+fn is_payload_wrapper(p: &XmlNode) -> bool {
+    p.ns.as_deref() == Some(NETCONF_BASE_NS) && matches!(p.local.as_str(), "config" | "filter")
+}
+
+/// Whether `p` is the NETCONF `<rpc>` operation envelope (RFC 6241) — its
+/// children are operations, never data nodes.
+fn is_rpc_envelope(p: &XmlNode) -> bool {
+    p.ns.as_deref() == Some(NETCONF_BASE_NS) && p.local == "rpc"
 }
 
 /// Schema data children of a mapped node (rpc bodies via their `input`).
@@ -94,7 +126,11 @@ fn children_of_mapped(lib: &Library, res: &Resolved) -> Vec<Child> {
         .collect()
 }
 
-/// Top-level data nodes of every compiled module (payload `<config>`).
+/// Top-level data nodes of every module **in `lib`**.
+///
+/// That is the open closure, not the workspace: a payload wrapper is normally
+/// answered by [`handle_summaries`] (Tier 1) from the workspace-wide summary
+/// index, and this is the no-summary fallback.
 fn children_all_modules(lib: &Library) -> Vec<Child> {
     let mut out = Vec::new();
     for m in lib.modules() {
@@ -176,6 +212,32 @@ fn children_data_roots_summaries(modules: &[ModuleInfo]) -> Vec<Child> {
                 mandatory: false,
                 default: None,
             });
+        }
+    }
+    out
+}
+
+/// Module `rpc`/`notification` operations of every summarized module (Tier-1
+/// fallback for the `<rpc>` envelope, whose workspace-wide operation set no
+/// single-module closure holds). A summary carries names only, so each
+/// operation is offered with its real kind and the generic body snippet.
+fn children_ops_summaries(modules: &[ModuleInfo]) -> Vec<Child> {
+    let mut out = Vec::new();
+    for m in modules {
+        for (names, kind) in [
+            (&m.rpcs, NodeKind::Rpc),
+            (&m.notifications, NodeKind::Notification),
+        ] {
+            for name in names {
+                out.push(Child {
+                    name: name.clone(),
+                    kind,
+                    ns: Some(m.namespace.clone()),
+                    keys: Vec::new(),
+                    mandatory: false,
+                    default: None,
+                });
+            }
         }
     }
     out
@@ -291,15 +353,11 @@ pub fn handle(text: &str, byte: usize, lib: &Library) -> Vec<CompletionItem> {
     // Mapped parent?
     let map = map_doc(&doc, lib);
     let mapped = map.resolved(parent).cloned();
-    // Wrapper roles (payload/config + <rpc>).
-    let is_payload_top = p.ns.as_deref() == Some(NETCONF_BASE_NS)
-        && matches!(p.local.as_str(), "config" | "data" | "filter");
-    let is_rpc = p.ns.as_deref() == Some(NETCONF_BASE_NS) && p.local == "rpc";
 
     let children = match mapped {
         Some(r) => Some(children_of_mapped(lib, &r)),
-        None if is_payload_top => Some(children_all_modules(lib)),
-        None if is_rpc => Some(children_ops(lib)),
+        None if is_payload_wrapper(p) => Some(children_all_modules(lib)),
+        None if is_rpc_envelope(p) => Some(children_ops(lib)),
         None => None,
     };
     let Some(children) = children else {
@@ -313,13 +371,17 @@ pub fn handle(text: &str, byte: usize, lib: &Library) -> Vec<CompletionItem> {
 }
 
 /// Tier-1 completion items at `byte` from the module summaries only (no
-/// compiled schema): the NETCONF operations plus every module's top-level data
-/// roots.
+/// compiled schema), for the two positions whose children come from the
+/// **workspace-wide** module set rather than from one module's closure:
 ///
-/// Offered only at the **root position** — the caret's parent is the document
-/// root element in the NETCONF base namespace (`<rpc>`, `<config>`, `<data>`
-/// or `<filter>`). A nested position needs a compiled schema, so it returns
-/// nothing (Tier 2 handles it once a `Library` exists).
+/// - a payload wrapper (`<config>`, `<filter>` — at the document root or
+///   nested under an envelope such as `<edit-config>`): every summarized
+///   module's top-level data nodes;
+/// - the `<rpc>` operation envelope: the built-in NETCONF operations plus every
+///   summarized module's top-level `rpc`/`notification`.
+///
+/// Any other position needs a compiled schema, so it returns nothing (Tier 2
+/// handles it once a `Library` exists), and `<data>` is not a position at all.
 pub fn handle_summaries(text: &str, byte: usize, modules: &[ModuleInfo]) -> Vec<CompletionItem> {
     let Some(doc) = crate::incomplete::tolerant_xml(text) else {
         return Vec::new();
@@ -335,16 +397,15 @@ pub fn handle_summaries(text: &str, byte: usize, modules: &[ModuleInfo]) -> Vec<
         return Vec::new();
     };
     let p = &doc.nodes[parent];
-    // Root position only: the parent must be the document's root element and a
-    // NETCONF wrapper. Anything deeper is a nested slot.
-    if p.parent.is_some()
-        || p.ns.as_deref() != Some(NETCONF_BASE_NS)
-        || !matches!(p.local.as_str(), "rpc" | "config" | "data" | "filter")
-    {
+    let mut children = if is_payload_wrapper(p) {
+        children_data_roots_summaries(modules)
+    } else if is_rpc_envelope(p) {
+        let mut ops = children_netconf_ops();
+        ops.extend(children_ops_summaries(modules));
+        ops
+    } else {
         return Vec::new();
-    }
-    let mut children = children_netconf_ops();
-    children.extend(children_data_roots_summaries(modules));
+    };
     children.sort_by(|a, b| a.name.cmp(&b.name));
     let parent_ns = p.ns.as_deref();
     children
@@ -515,49 +576,126 @@ mod tests {
                 name: "m".to_owned(),
                 namespace: "urn:m".to_owned(),
                 top_data: vec!["system".to_owned(), "flag".to_owned()],
+                rpcs: vec!["reset".to_owned()],
+                notifications: vec!["alarm".to_owned()],
             },
             ModuleInfo {
                 name: "other".to_owned(),
                 namespace: "urn:other".to_owned(),
                 top_data: vec!["box".to_owned()],
+                rpcs: Vec::new(),
+                notifications: Vec::new(),
             },
         ]
     }
 
+    /// The user's rpc template: the caret sits inside an `<edit-config>`
+    /// payload wrapper, which is a data position, not the document root.
+    fn edit_config_template() -> String {
+        format!(
+            r#"<rpc message-id="102" xmlns="{NETCONF_BASE_NS}">
+  <edit-config>
+    <target><running/></target>
+    <default-operation>merge</default-operation>
+    <config>
+      |
+    </config>
+  </edit-config>
+</rpc>"#
+        )
+    }
+
     #[test]
-    fn summaries_root_completion_offers_data_roots_and_netconf_ops() {
+    fn summaries_payload_wrapper_offers_every_module_data_root() {
         let mods = summaries();
-        for root in ["rpc", "config"] {
-            let text = format!(
-                "<{root} xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">\n  |\n</{root}>"
+        // At the document root …
+        let root = format!("<config xmlns=\"{NETCONF_BASE_NS}\">\n  |\n</config>");
+        // … and nested under an envelope, where the compiled library would only
+        // know the document's own closure (the reported bug: 0 items on a real
+        // corpus because that closure has no data roots).
+        let nested = edit_config_template();
+        for text in [&root, &nested] {
+            let byte = marker_byte(text);
+            let items = handle_summaries(text, byte, &mods);
+            let got = labels(&items);
+            assert!(got.contains(&"system".to_owned()), "{got:?}");
+            assert!(got.contains(&"flag".to_owned()), "{got:?}");
+            assert!(got.contains(&"box".to_owned()), "{got:?}");
+            // Operations are not data: never offered inside a payload wrapper.
+            assert!(!got.contains(&"get-config".to_owned()), "{got:?}");
+            assert!(!got.contains(&"reset".to_owned()), "{got:?}");
+            // A root in another namespace declares it (the wrapper's in-scope
+            // default is the NETCONF base namespace).
+            let system = items.iter().find(|c| c.label == "system").expect("system");
+            assert!(
+                system
+                    .insert_text
+                    .as_deref()
+                    .unwrap_or("")
+                    .contains("xmlns=\"urn:m\""),
+                "{:?}",
+                system.insert_text
             );
-            let byte = marker_byte(&text);
-            let got = labels(&handle_summaries(&text, byte, &mods));
-            assert!(got.contains(&"system".to_owned()), "{root}: {got:?}");
-            assert!(got.contains(&"flag".to_owned()), "{root}: {got:?}");
-            assert!(got.contains(&"box".to_owned()), "{root}: {got:?}");
-            assert!(got.contains(&"get-config".to_owned()), "{root}: {got:?}");
         }
-        // A data root from another module declares its own namespace.
-        let text = r#"<rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
-  |
-</rpc>"#;
-        let byte = marker_byte(text);
-        let items = handle_summaries(text, byte, &mods);
-        let system = items.iter().find(|c| c.label == "system").expect("system");
+    }
+
+    #[test]
+    fn summaries_rpc_envelope_offers_operations_not_data_roots() {
+        let mods = summaries();
+        let text = format!("<rpc xmlns=\"{NETCONF_BASE_NS}\">\n  |\n</rpc>");
+        let byte = marker_byte(&text);
+        let items = handle_summaries(&text, byte, &mods);
+        let got = labels(&items);
+        assert!(got.contains(&"get-config".to_owned()), "{got:?}");
+        assert!(got.contains(&"edit-config".to_owned()), "{got:?}");
+        assert!(got.contains(&"reset".to_owned()), "module rpc: {got:?}");
+        assert!(got.contains(&"alarm".to_owned()), "notification: {got:?}");
+        // A data root is not a valid `<rpc>` child (RFC 6241).
+        assert!(!got.contains(&"system".to_owned()), "{got:?}");
+        // An operation element declares its module's namespace.
+        let reset = items.iter().find(|c| c.label == "reset").expect("reset");
         assert!(
-            system
+            reset
                 .insert_text
                 .as_deref()
                 .unwrap_or("")
                 .contains("xmlns=\"urn:m\""),
             "{:?}",
-            system.insert_text
+            reset.insert_text
         );
+        assert_eq!(reset.detail.as_deref(), Some("rpc"));
+        let alarm = items.iter().find(|c| c.label == "alarm").expect("alarm");
+        assert_eq!(alarm.detail.as_deref(), Some("notification"));
     }
 
     #[test]
-    fn summaries_root_completion_is_empty_for_nested_and_non_netconf_roots() {
+    fn data_is_not_a_completion_position() {
+        let mods = summaries();
+        let text = format!("<data xmlns=\"{NETCONF_BASE_NS}\">\n  |\n</data>");
+        let byte = marker_byte(&text);
+        assert!(
+            handle_summaries(&text, byte, &mods).is_empty(),
+            "a `<data>` body is server output (rpc-reply), not authored"
+        );
+        // … and the compiled path does not revive it.
+        let lib = compile();
+        assert!(handle(&text, byte, &lib).is_empty());
+    }
+
+    #[test]
+    fn nested_config_payload_offers_the_compiled_data_roots() {
+        // Tier 2 fallback (no summary index): the compiled closure's roots.
+        let lib = compile();
+        let text = edit_config_template();
+        let byte = marker_byte(&text);
+        let items = handle(&text, byte, &lib);
+        let got = labels(&items);
+        assert!(got.contains(&"system".to_owned()), "{got:?}");
+        assert!(got.contains(&"other".to_owned()), "{got:?}");
+    }
+
+    #[test]
+    fn summaries_completion_is_empty_for_nested_data_and_non_netconf_roots() {
         let mods = summaries();
         let nested = r#"<config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
   <system>

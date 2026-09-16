@@ -10,10 +10,19 @@ schema-driven completion.
   `get-config`, `edit-config`, or a `<config>` payload (see
   [10-commands-and-settings.md](10-commands-and-settings.md)).
 - **Completion**
-  - XML: inside a recognized container/list (or a `<config>` payload), child
-    element names are offered — with `key` placeholders and an automatic
-    `xmlns` when a child lives in a different namespace; under `<rpc>` the
-    built-in NETCONF operations and your compiled module RPCs.
+  - XML: inside a recognized container/list, child element names are offered —
+    with `key` placeholders and an automatic `xmlns` when a child lives in a
+    different namespace. Two NETCONF positions are answered **workspace-wide**
+    (from the module-summary index, so they work on a giant tree with no YANG
+    file open):
+    - a **payload wrapper** — `<config>` (the `edit-config` payload, at the
+      document root *or* nested under `<edit-config>`) or `<filter>` — offers
+      every module's top-level data roots;
+    - the `<rpc>` envelope offers the built-in NETCONF operations plus every
+      module's top-level `rpc`/`notification`.
+
+    `<data>` is *not* a completion position: it only appears in a server's
+    `<rpc-reply>` (read and validated, never authored).
   - JSON: RFC 7951 member names at a fresh object slot — root members are
     always `module:name`; nested members are bare when they share the parent
     module, `module:name` otherwise.

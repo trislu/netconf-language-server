@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **XML completion in an `edit-config` payload (and at every other NETCONF
+  position that spans the whole workspace).** Two authoring positions were
+  served from the compiled library's *open closure* — a few modules — instead of
+  the workspace: an `<rpc>` envelope offered data roots but none of the
+  workspace modules' own `rpc`/`notification`, and a `<config>`/`<filter>`
+  payload wrapper nested under `<edit-config>` (the common rpc template)
+  returned **zero** items on a real corpus, because the document's closure
+  (e.g. `ietf-netconf`) declares no top-level data node. Both positions are now
+  answered from the module-summary index (which carries top-level
+  data/rpc/notification names), so a nested `<config>` offers every module's
+  data roots and `<rpc>` offers the built-in NETCONF operations plus every
+  module's operations.
+- **`<data>` is no longer a completion position.** It only ever appears in a
+  server's `<rpc-reply>`, so it is not an authoring slot; the instance mapping
+  still treats it as a payload wrapper, so a captured reply is still mapped and
+  validated.
+
 ## [0.7.0] - 2026-09-11
 
 ### Added

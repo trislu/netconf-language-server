@@ -530,11 +530,15 @@ mod tests {
                 name: "m".to_owned(),
                 namespace: "urn:m".to_owned(),
                 top_data: vec!["system".to_owned(), "flag".to_owned()],
+                rpcs: Vec::new(),
+                notifications: Vec::new(),
             },
             ModuleInfo {
                 name: "other".to_owned(),
                 namespace: "urn:other".to_owned(),
                 top_data: vec!["box".to_owned()],
+                rpcs: Vec::new(),
+                notifications: Vec::new(),
             },
         ]
     }

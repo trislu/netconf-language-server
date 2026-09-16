@@ -6,6 +6,17 @@ documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this extension adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-09-17
+
+- Schema-driven **leaf value completion** in instance documents: `identityref`
+  values (XML `xmlns:` declarations and `prefix:identity`; JSON
+  `module:identity`) from a workspace-wide identity graph, plus `enumeration`
+  members, `bits` names and `boolean` values, including an empty JSON value
+  slot.
+- Instance completion now works down the data tree and inside an
+  `edit-config` payload, and the matching diagnostics no longer report valid
+  cross-module `identityref` values as unknown.
+
 ## [0.7.0] - 2026-09-11
 
 - Instance-document schema support on giant workspaces: XML/RFC 7951 JSON

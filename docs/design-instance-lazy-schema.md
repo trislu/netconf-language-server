@@ -27,15 +27,32 @@ module's closure:
   those names too, so `ModuleInfo` has `top_data`/`rpcs`/`notifications`).
 
 Any other (mapped) position without a compiled schema returns nothing; `<data>`
-is not a position at all (server-side `<rpc-reply>` output).
+is not a position at all (server-side `<rpc-reply>` output). A payload wrapper's
+subtree is mapped whichever way its envelope resolves:
 
-**Tier 2 — per-module open closure (everything else).**
-Once a root namespace is known (the user typed/picked a root, or the parsed
-document already has one), resolve it through the summary index to a module
-name/url, materialize **only that module's closure** into the repository
-(existing lazy catalog resolution over `NameIndex` candidates), compile the
-snapshot, and serve diagnostics/hover/goto/nested completion with the existing
-`Library`-based code paths. No whole-tree compile.
+- when the envelope module (`ietf-netconf`) **is** compiled, the wrapper maps to
+  its schema node, whose kind is **`anyxml`** (`edit-config`'s `config`,
+  `get`/`get-config`'s `filter`); the mapping treats that node's content as a
+  data tree (top-level nodes of any module) instead of opaque XML;
+- when it is **not** compiled, the envelope is silent and the mapping promotes
+  the wrapper (`<config>`/`<filter>` under `<edit-config>`/`<get-config>`,
+  `<data>` under `<rpc-reply>`) to a data position.
+
+A `<filter>` is recognized as partial content wherever it sits (document root or
+nested under `<get>`/`<get-config>`), so the now-mapped subtree is exempt from
+mandatory/key/choice checks.
+
+**Tier 2 — per-document module closure (everything else).**
+The modules a document actually references are resolved through the summary
+index — XML: the distinct element namespaces; JSON: the distinct `module:name`
+member qualifiers — and **each one's closure** is materialized into the
+repository (existing lazy catalog resolution over `NameIndex` candidates) in one
+reconcile, then the snapshot is compiled and
+diagnostics/hover/goto/nested completion use the existing `Library`-based code
+paths. The document's module state is therefore a **set** per document: a NETCONF
+message spans several modules (the envelope, each data root's module, every
+augmenting module that contributes a node), and seeding only the root's module
+left nested positions unmappable. No whole-tree compile.
 
 ## Integration points (netconf-language-server)
 
@@ -44,7 +61,7 @@ snapshot, and serve diagnostics/hover/goto/nested completion with the existing
 | `schema_idx::module_summaries(lib)` | keep; add `module_summaries_from_summary(&SummaryIndex) -> Vec<ModuleInfo>` (same shape: name/namespace/top_data) |
 | `Server.classify` | when `snapshot().lib` is `None`, fall back to the summary index so valid NETCONF docs are no longer reported `NotNetconf` |
 | `xcomp::handle` / `jcomp::handle` | add a summaries-only entry (payload-wrapper + `<rpc>` children); `Library` path unchanged (its closure-only roots are the no-summary fallback) |
-| `xml_ctx` / `json_ctx` | if `lib` is `None`, parse the document root, resolve its namespace via Tier 1, materialize that module (Tier 2), then proceed |
+| `xml_ctx` / `json_ctx` | seed **every** module the document references through Tier 1 (XML: distinct element namespaces; JSON: distinct member qualifiers), materialize their closures (Tier 2) in one reconcile, then proceed |
 | `Server` state | `summary: RwLock<Option<Arc<SummaryIndex>>>`, `summary_build: Mutex<()>` (mirror `refidx`), invalidation next to `invalidate_refidx` |
 | references/rename | unchanged: they keep their own lazy `ReferenceIndex` and are YANG-only |
 

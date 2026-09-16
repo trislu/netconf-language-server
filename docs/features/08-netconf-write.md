@@ -23,9 +23,18 @@ schema-driven completion.
 
     `<data>` is *not* a completion position: it only appears in a server's
     `<rpc-reply>` (read and validated, never authored).
+  - Once a data node is present, completion continues **down the data tree**:
+    the server compiles the closure of every module the document references
+    (each element's namespace), so children of `<interfaces>`, an `<interface>`
+    entry, and so on are offered even inside an `<edit-config>` payload or a
+    `<get-config>`/`<filter>` selection. A list entry's `key` leafs are
+    inserted as placeholders, and a child in another namespace carries an
+    `xmlns`.
   - JSON: RFC 7951 member names at a fresh object slot — root members are
     always `module:name`; nested members are bare when they share the parent
-    module, `module:name` otherwise.
+    module, `module:name` otherwise. As in XML, every module the document
+    references (its distinct `module:name` qualifiers) is compiled, so a
+    document spanning several modules completes in all of them.
 - **When it runs / customization**: completion works wherever the read
   features are active (see
   [07-netconf-instances-read.md](07-netconf-instances-read.md)) and templates

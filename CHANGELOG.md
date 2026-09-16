@@ -25,6 +25,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server's `<rpc-reply>`, so it is not an authoring slot; the instance mapping
   still treats it as a payload wrapper, so a captured reply is still mapped and
   validated.
+- **Nested completion under a data node.** Picking a top-level data root from
+  the summary index only inserted its element; the language server then
+  materialized just the document **root's** module (XML: the root's namespace;
+  JSON: the first `module:name` root member), so the child's own module was not
+  compiled and typing inside that element returned **zero** items. An instance
+  document now seeds the closure of **every** module it references — the
+  distinct element namespaces (XML) or member qualifiers (JSON) — in one
+  reconcile, so children of a data node complete in an `edit-config` payload,
+  a bare `<config>` file, a `<get-config>`/`<filter>` selection, and a
+  multi-module RFC 7951 document.
+- **A NETCONF payload wrapper's subtree is mapped, modeled or not.** A
+  `<config>`/`<filter>`/`<data>` payload wrapper used to lose its whole subtree
+  in two ways: when the envelope module was compiled, the wrapper resolved to
+  its schema's **`anyxml`** node (`edit-config`'s `config`, `get-config`'s
+  `filter`) and the content went *opaque*; when it was not compiled, the wrapper
+  inherited the unmodeled envelope's silent slot. Either way, typing inside the
+  data root below it (e.g. `<interfaces>`) returned **zero** items and
+  hover/goto/diagnostics below it were dead. The instance mapping now maps an
+  `anyxml`/`anydata` payload carrier's content as a data tree, and promotes a
+  wrapper under an unmodeled envelope to a data position. A `<filter>` nested
+  under `<get>`/`<get-config>` is also recognized as a partial-content filter
+  (previously only a document-root `<filter>` was), so the newly mapped subtree
+  raises no false missing key/mandatory diagnostics.
 
 ## [0.7.0] - 2026-09-11
 

@@ -1,6 +1,6 @@
 //! Server state + the `LanguageServer` implementation (thin dispatch).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::{
     Arc, OnceLock,
     atomic::{AtomicU64, Ordering},
@@ -84,12 +84,14 @@ pub(crate) struct Server {
     /// library exists. Same lifecycle as `refidx`: rebuilt lazily after
     /// [`Server::invalidate_refidx`].
     summary: RwLock<Option<Arc<SummaryIndex>>>,
-    /// Tier-2 module per open instance document: the module name whose closure
-    /// [`Server::ensure_instance_schema`] materialized for an XML/JSON doc.
-    /// [`Server::sync_open_closure`] seeds from these names, so the compiled
-    /// snapshot can serve that document without a whole-tree compile. Bounded:
-    /// one module per instance doc, dropped on `did_close`.
-    instance_modules: RwLock<HashMap<String, String>>,
+    /// Tier-2 modules per open instance document: the module names whose
+    /// closures [`Server::ensure_instance_modules`] materialized for an XML/JSON
+    /// doc. [`Server::sync_open_closure`] seeds from these names, so the
+    /// compiled snapshot can serve that document without a whole-tree compile.
+    /// A document normally references several modules (a NETCONF envelope plus
+    /// every data module it configures), so this is a set per doc; the
+    /// document's entry is dropped again on `did_close`.
+    instance_modules: RwLock<HashMap<String, BTreeSet<String>>>,
     /// Urls of the currently open YANG buffers (the roots of the closure).
     open_yang: RwLock<HashSet<String>>,
     docs: Cache<String, std::sync::Arc<Document>>,
@@ -242,11 +244,16 @@ impl Server {
     /// The XML instance context for a doc: text rope, parsed element tree, and
     /// the compiled library.
     ///
-    /// The document's own module is always seeded into
+    /// Every module the document references is seeded into
     /// [`Server::instance_modules`] (Tier 2, unioned across open instance docs)
     /// before the snapshot, whether or not a library already exists, so the
-    /// compiled snapshot covers this document. A document with no determinable
-    /// root namespace stays dormant (no unfounded diagnostics).
+    /// compiled snapshot covers this document. That is more than the root's
+    /// namespace: a NETCONF message is a mix of modules (the envelope, each data
+    /// root's module, every augmenting module that contributes a node), and only
+    /// the document's own root namespace was seeded before — leaving nested
+    /// completion/hover/goto blind to the data modules the user actually typed.
+    /// A document with no resolvable namespace stays dormant (no unfounded
+    /// diagnostics).
     async fn xml_ctx(
         &self,
         uri: &str,
@@ -254,9 +261,8 @@ impl Server {
         let rope = self.rope_for(uri).await?;
         let text = rope.to_string();
         let xdoc = crate::xml::parse(&text)?;
-        if let Some(ns) = xdoc.nodes.first().and_then(|n| n.ns.clone()) {
-            let _ = self.ensure_instance_schema(uri, &ns).await;
-        }
+        let namespaces = distinct_element_namespaces(&xdoc);
+        let _ = self.ensure_instance_namespaces(uri, &namespaces).await;
         let lib = self.snapshot().await.lib?;
         Some((rope, xdoc, lib))
     }
@@ -380,10 +386,13 @@ impl Server {
     /// The JSON (RFC 7951) instance context: text rope, parsed member tree,
     /// and the compiled library.
     ///
-    /// The document's own module (its first module-qualified root member) is
-    /// always seeded into [`Server::instance_modules`] before the snapshot,
-    /// whether or not a library already exists; a document with no qualified
-    /// root member stays dormant.
+    /// Every module named by a `module:name` member qualifier is seeded into
+    /// [`Server::instance_modules`] before the snapshot, whether or not a
+    /// library already exists, so a document that spans several modules (the
+    /// common RFC 7951 case) compiles all of them. Seeding only the first
+    /// root qualifier left nested completion/hover/goto blind to the other
+    /// modules; a member written bare keeps its parent's module, which is
+    /// seeded by the enclosing qualifier.
     async fn json_ctx(
         &self,
         uri: &str,
@@ -391,14 +400,8 @@ impl Server {
         let rope = self.rope_for(uri).await?;
         let text = rope.to_string();
         let jdoc = crate::json::parse(&text)?;
-        let module = jdoc.objects.get(jdoc.root).and_then(|o| {
-            o.members
-                .iter()
-                .find_map(|&m| jdoc.members[m].module.clone())
-        });
-        if let Some(module) = module {
-            let _ = self.ensure_instance_module(uri, &module).await;
-        }
+        let modules = distinct_member_modules(&jdoc);
+        let _ = self.ensure_instance_modules(uri, &modules).await;
         let lib = self.snapshot().await.lib?;
         Some((rope, jdoc, lib))
     }
@@ -660,31 +663,46 @@ impl Server {
         self.summary.read().await.clone()
     }
 
-    /// Tier 2: materialize the closure of the module declaring `namespace`
-    /// (via the Tier-1 summary index) for the instance document `uri`, then
-    /// return the compiled library. The NETCONF base namespace maps to
-    /// `ietf-netconf` (its own module namespace is the base namespace, but a
-    /// document may use the base namespace without that module being the
-    /// namespace winner). Returns `None` when the namespace is unknown or the
-    /// workspace has no root.
-    async fn ensure_instance_schema(&self, uri: &str, namespace: &str) -> Option<Arc<Library>> {
+    /// Tier 2: resolve `namespaces` to module names (via the Tier-1 summary
+    /// index) and materialize their closures for the instance document `uri` in
+    /// one reconcile. The NETCONF base namespace maps to `ietf-netconf` (its own
+    /// module namespace is the base namespace, but a document may use the base
+    /// namespace without that module being the namespace winner). Namespaces
+    /// the workspace does not know are skipped. Returns the compiled library.
+    async fn ensure_instance_namespaces(
+        &self,
+        uri: &str,
+        namespaces: &[String],
+    ) -> Option<Arc<Library>> {
         let index = self.ensure_summary_index().await?;
-        let module = if namespace == inst::NETCONF_BASE_NS {
-            "ietf-netconf".to_owned()
-        } else {
-            index.resolve_namespace(namespace)?.name.clone()
-        };
-        self.ensure_instance_module(uri, &module).await
+        let modules: Vec<String> = namespaces
+            .iter()
+            .filter_map(|ns| {
+                if ns == inst::NETCONF_BASE_NS {
+                    Some("ietf-netconf".to_owned())
+                } else {
+                    index.resolve_namespace(ns).map(|s| s.name.clone())
+                }
+            })
+            .collect();
+        self.ensure_instance_modules(uri, &modules).await
     }
 
-    /// Record `module` as the Tier-2 schema of instance document `uri` and
-    /// reconcile the repository closure so that module (and its imports) is
-    /// materialized, then return the compiled library.
-    async fn ensure_instance_module(&self, uri: &str, module: &str) -> Option<Arc<Library>> {
+    /// Record `modules` as the Tier-2 schemas of instance document `uri` and
+    /// reconcile the repository closure **once** so they (and their imports) are
+    /// materialized, then return the compiled library. Adding them one at a time
+    /// would re-run the closure sync per module.
+    async fn ensure_instance_modules(&self, uri: &str, modules: &[String]) -> Option<Arc<Library>> {
         self.ensure_startup_index().await;
         let changed = {
             let mut map = self.instance_modules.write().await;
-            note_instance_module(&mut map, uri, module)
+            // Every module must be noted (the scan sets the map); `|=` keeps
+            // that side effect, unlike a short-circuiting `any`.
+            let mut changed = false;
+            for m in modules {
+                changed |= note_instance_module(&mut map, uri, m);
+            }
+            changed
         };
         if changed {
             self.sync_open_closure().await;
@@ -750,10 +768,13 @@ impl Server {
                 seeds.extend(crate::closure::header_seeds(root));
             }
         }
-        // Tier-2 instance modules: one module name per open instance document,
-        // resolved like an open doc's seeds so their closures stay materialized.
-        for module in self.instance_modules.read().await.values() {
-            seeds.push((module.clone(), None));
+        // Tier-2 instance modules: every module an open instance document
+        // references, resolved like an open doc's seeds so their closures stay
+        // materialized.
+        for modules in self.instance_modules.read().await.values() {
+            for module in modules {
+                seeds.push((module.clone(), None));
+            }
         }
         let url_for =
             |p: &std::path::Path| workspace::path_to_url(p).map(|u| workspace::canon_url(&u));
@@ -854,20 +875,55 @@ impl Server {
     }
 }
 
-/// Record the Tier-2 module of instance document `uri`; returns whether the
-/// mapping changed (a repeated resolution of the same namespace must not re-run
-/// the closure sync). An empty module name is ignored.
-fn note_instance_module(map: &mut HashMap<String, String>, uri: &str, module: &str) -> bool {
+/// Record `module` as a Tier-2 schema of instance document `uri`; returns
+/// whether the document's set changed (a repeated resolution of the same
+/// namespace must not re-run the closure sync). An empty module name is ignored.
+fn note_instance_module(
+    map: &mut HashMap<String, BTreeSet<String>>,
+    uri: &str,
+    module: &str,
+) -> bool {
     if module.is_empty() {
         return false;
     }
-    map.insert(uri.to_owned(), module.to_owned()).as_deref() != Some(module)
+    map.entry(uri.to_owned())
+        .or_default()
+        .insert(module.to_owned())
 }
 
-/// Drop the Tier-2 module of a closed instance document; returns whether a
-/// mapping was present (so the caller knows the closure needs reconciling).
-fn forget_instance_module(map: &mut HashMap<String, String>, uri: &str) -> bool {
+/// Drop the Tier-2 modules of a closed instance document; returns whether an
+/// entry was present (so the caller knows the closure needs reconciling).
+fn forget_instance_module(map: &mut HashMap<String, BTreeSet<String>>, uri: &str) -> bool {
     map.remove(uri).is_some()
+}
+
+/// The distinct resolved namespaces of an XML document's elements — the modules
+/// a document references (its envelope, each data root, and every augmenting
+/// module). A document uses a handful of namespaces, so this is a cheap bounded
+/// scan; the result is sorted so seeding is deterministic (order is immaterial
+/// to the closure).
+fn distinct_element_namespaces(doc: &crate::xml::XmlDoc) -> Vec<String> {
+    let mut out = BTreeSet::new();
+    for n in &doc.nodes {
+        if let Some(ns) = &n.ns {
+            out.insert(ns.clone());
+        }
+    }
+    out.into_iter().collect()
+}
+
+/// The distinct module qualifiers of a JSON (RFC 7951) document's members — the
+/// modules a document references. Bare members carry no qualifier: they inherit
+/// their parent object's module, which the enclosing qualified member already
+/// contributed. Sorted for deterministic seeding (order is immaterial).
+fn distinct_member_modules(doc: &crate::json::JsonDoc) -> Vec<String> {
+    let mut out = BTreeSet::new();
+    for m in &doc.members {
+        if let Some(module) = &m.module {
+            out.insert(module.clone());
+        }
+    }
+    out.into_iter().collect()
 }
 
 /// True when `source` does not even parse as a YANG module/submodule
@@ -1632,9 +1688,10 @@ impl LanguageServer for Server {
             };
             let text = rope.to_string();
             let lang = workspace::doc_lang(&uri);
-            // Root position (XML `<` / JSON `"` in the root object): always the
-            // FULL data-root set from the summary index, never the possibly
-            // single-module compiled library.
+            // The positions that need the FULL workspace module set (an XML
+            // payload wrapper or the `<rpc>` envelope, a JSON root object) are
+            // always answered from the summary index, never from the compiled
+            // library, whose closure may hold only some of those modules.
             if let Some(index) = self.ensure_summary_index().await {
                 let modules = schema_idx::module_summaries_from_summary(&index);
                 let items = match lang {
@@ -1650,8 +1707,8 @@ impl LanguageServer for Server {
                     return Ok(Some(CompletionResponse::Array(items)));
                 }
             }
-            // Nested position: the compiled schema, materializing this
-            // document's own module first (Tier 2 seeding).
+            // Nested position: the compiled schema, materializing every module
+            // this document references first (Tier 2 seeding).
             let lib = match lang {
                 workspace::DocLang::Xml => self.xml_ctx(&uri).await.map(|(_, _, lib)| lib),
                 workspace::DocLang::Json => self.json_ctx(&uri).await.map(|(_, _, lib)| lib),
@@ -1727,20 +1784,36 @@ impl LanguageServer for Server {
 
 #[cfg(test)]
 mod tests {
-    use super::{HashMap, forget_instance_module, note_instance_module};
+    use super::{
+        BTreeSet, HashMap, distinct_element_namespaces, distinct_member_modules,
+        forget_instance_module, note_instance_module,
+    };
 
     #[test]
     fn instance_module_seed_set_is_added_and_removed_per_document() {
-        let mut map: HashMap<String, String> = HashMap::new();
+        let mut map: HashMap<String, BTreeSet<String>> = HashMap::new();
         let doc = "file:///w/config.xml";
         // The first namespace resolution of a doc seeds its module.
         assert!(note_instance_module(&mut map, doc, "ietf-interfaces"));
-        assert_eq!(map.get(doc).map(String::as_str), Some("ietf-interfaces"));
+        assert_eq!(
+            map.get(doc).map(|s| s.iter().cloned().collect::<Vec<_>>()),
+            Some(vec!["ietf-interfaces".to_owned()])
+        );
         // Re-resolving the same namespace is a no-op (no closure re-sync).
         assert!(!note_instance_module(&mut map, doc, "ietf-interfaces"));
-        // A different root namespace replaces the mapping.
+        // A second namespace (the envelope's own module) is *added*, not a
+        // replacement: one document spans several modules.
         assert!(note_instance_module(&mut map, doc, "ietf-netconf"));
-        assert_eq!(map.get(doc).map(String::as_str), Some("ietf-netconf"));
+        assert_eq!(
+            map.get(doc)
+                .map(|s| s.iter().cloned().collect::<BTreeSet<_>>()),
+            Some(
+                ["ietf-interfaces", "ietf-netconf"]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect()
+            )
+        );
         // An empty module name is never recorded.
         assert!(!note_instance_module(&mut map, "file:///w/other.xml", ""));
         assert!(!map.contains_key("file:///w/other.xml"));
@@ -1752,7 +1825,7 @@ mod tests {
 
     #[test]
     fn two_instance_docs_union_their_modules_and_drop_only_their_own() {
-        let mut map: HashMap<String, String> = HashMap::new();
+        let mut map: HashMap<String, BTreeSet<String>> = HashMap::new();
         let a = "file:///w/a.xml";
         let b = "file:///w/b.json";
         // Two docs from different modules seed both (the closure is a union).
@@ -1761,7 +1834,7 @@ mod tests {
         assert_eq!(map.len(), 2, "both docs' modules are seeded");
         // Closing one drops only its own entry; the other module stays seeded.
         assert!(forget_instance_module(&mut map, a));
-        assert_eq!(map.get(b).map(String::as_str), Some("mod-b"));
+        assert!(map.get(b).is_some_and(|s| s.contains("mod-b")));
         assert!(!map.contains_key(a));
 
         // Two docs may share a module: dropping one keeps it while the other
@@ -1772,10 +1845,40 @@ mod tests {
         assert!(note_instance_module(&mut map, d, "shared"));
         assert!(forget_instance_module(&mut map, c));
         assert!(
-            map.values().any(|m| m == "shared"),
+            map.values().any(|s| s.contains("shared")),
             "the shared module is still seeded by the open doc {d}"
         );
         assert!(forget_instance_module(&mut map, d));
-        assert!(!map.values().any(|m| m == "shared"));
+        assert!(!map.values().any(|s| s.contains("shared")));
+    }
+
+    #[test]
+    fn distinct_element_namespaces_are_deduplicated() {
+        let doc = crate::xml::parse(
+            r#"<config xmlns="urn:netconf">
+  <interfaces xmlns="urn:if"><interface/></interfaces>
+  <alias xmlns="urn:netconf"/>
+</config>"#,
+        )
+        .expect("xml");
+        assert_eq!(
+            distinct_element_namespaces(&doc),
+            vec!["urn:if".to_owned(), "urn:netconf".to_owned()]
+        );
+    }
+
+    #[test]
+    fn distinct_member_modules_are_deduplicated() {
+        let doc = crate::json::parse(
+            r#"{
+  "mod-a:top": { "child": { "mod-b:leaf": 1 } },
+  "mod-c:other": {}
+}"#,
+        )
+        .expect("json");
+        assert_eq!(
+            distinct_member_modules(&doc),
+            vec!["mod-a".to_owned(), "mod-b".to_owned(), "mod-c".to_owned()]
+        );
     }
 }

@@ -114,6 +114,31 @@ fn match_top(lib: &Library, doc: &XmlDoc, e: usize) -> Option<Resolved> {
     None
 }
 
+/// Map an element that sits directly in a **payload-wrapper position**: its
+/// parent is `<config>`/`<filter>`/`<data>` (a NETCONF wrapper, whether it is
+/// unmodeled or the `anyxml` one in `ietf-netconf`), so it may be a top-level
+/// data node of *any* compiled module. Resolves it or reports an unknown
+/// top-level node.
+fn map_top_child(lib: &Library, doc: &XmlDoc, e: usize, diags: &mut Vec<InstDiag>) -> Slot {
+    match match_top(lib, doc, e) {
+        Some(r) => Slot::Mapped(r),
+        None => {
+            let elem = &doc.nodes[e];
+            diags.push(InstDiag {
+                range: elem.name_range.clone(),
+                message: format!(
+                    "unknown element `<{}>` (no compiled module has this \
+                     top-level data node in namespace `{}`)",
+                    elem.local,
+                    elem.ns.as_deref().unwrap_or("<none>")
+                ),
+                code: "netconf_unknown_node",
+            });
+            Slot::Dead
+        }
+    }
+}
+
 /// Find a top-level `rpc`/`notification` of `e` across all modules (the
 /// operation element directly under `<rpc>`).
 fn match_top_op(lib: &Library, doc: &XmlDoc, e: usize) -> Option<Resolved> {
@@ -250,34 +275,45 @@ pub fn map_doc(doc: &XmlDoc, lib: &Library) -> InstMap {
                         .module(&r.module)
                         .and_then(|rec| rec.node(r.id))
                         .map(|n| n.kind());
+                    let parent_elem = &doc.nodes[p];
+                    // The NETCONF payload carriers are `anyxml` in the schema
+                    // (`edit-config`'s `config`, `get`/`get-config`'s `filter`,
+                    // `rpc-reply`'s `data`), but their content is a **data
+                    // tree**, not arbitrary XML. Treat such a parent like a
+                    // payload wrapper — otherwise the whole payload subtree
+                    // went opaque and lost completion/hover/goto/diagnostics.
+                    let anyxml_payload =
+                        matches!(node, Some(NodeKind::Anyxml) | Some(NodeKind::Anydata))
+                            && parent_elem.ns.as_deref() == Some(NETCONF_BASE_NS)
+                            && is_payload_wrapper(&parent_elem.local);
                     match node {
-                        // anyxml/anydata content has no (known) schema.
+                        // Any other anyxml/anydata content has no (known) schema.
+                        Some(NodeKind::Anyxml) | Some(NodeKind::Anydata) if anyxml_payload => {
+                            map_top_child(lib, doc, i, &mut diags)
+                        }
                         Some(NodeKind::Anyxml) | Some(NodeKind::Anydata) => Slot::Opaque,
                         _ => match_child(lib, doc, i, &r.module, r.id, &mut diags),
                     }
                 }
-                Some(Slot::Top) => match match_top(lib, doc, i) {
-                    Some(r) => Slot::Mapped(r),
-                    None => {
-                        diags.push(InstDiag {
-                            range: elem.name_range.clone(),
-                            message: format!(
-                                "unknown element `<{}>` (no compiled module has this \
-                                 top-level data node in namespace `{}`)",
-                                elem.local,
-                                elem.ns.as_deref().unwrap_or("<none>")
-                            ),
-                            code: "netconf_unknown_node",
-                        });
-                        Slot::Dead
-                    }
-                },
+                Some(Slot::Top) => map_top_child(lib, doc, i, &mut diags),
                 // Under <rpc>: a compiled module's operation maps; built-in ops
                 // (get-config, edit-config, …) have no schema yet and stay silent.
                 Some(Slot::RpcOp) => match match_top_op(lib, doc, i) {
                     Some(r) => Slot::Mapped(r),
                     None => Slot::Silent,
                 },
+                // A payload wrapper nested under an unmodeled envelope is a data
+                // position again, not envelope internals: `<config>`/`<filter>`
+                // inside a built-in `<edit-config>`/`<get-config>` body, or
+                // `<data>` inside a captured `<rpc-reply>`. Without this the
+                // whole payload subtree stayed silent and nested completion had
+                // no mapping to expand.
+                Some(Slot::Silent)
+                    if elem.ns.as_deref() == Some(NETCONF_BASE_NS)
+                        && is_payload_wrapper(&elem.local) =>
+                {
+                    Slot::Top
+                }
                 Some(Slot::Silent) => Slot::Silent,
                 Some(Slot::Dead) | None => Slot::Dead,
                 Some(Slot::Opaque) => Slot::Opaque,
@@ -354,9 +390,11 @@ fn filter_mask(doc: &XmlDoc) -> Vec<bool> {
     let mut in_filter = vec![false; doc.nodes.len()];
     for i in 0..doc.nodes.len() {
         let elem = &doc.nodes[i];
-        let own = elem.parent.is_none()
-            && elem.ns.as_deref() == Some(NETCONF_BASE_NS)
-            && elem.local == "filter";
+        // A NETCONF `<filter>` selects partial content wherever it sits: a
+        // payload file may root at `<filter>`, and the common case nests it
+        // under the built-in `<get>`/`<get-config>` operation. Both subtrees
+        // must be exempt from the mandatory/key/choice checks below.
+        let own = elem.ns.as_deref() == Some(NETCONF_BASE_NS) && elem.local == "filter";
         in_filter[i] = own || elem.parent.map(|p| in_filter[p]).unwrap_or(false);
     }
     in_filter
@@ -433,9 +471,39 @@ mod tests {
   }
 }"#;
 
+    /// A minimal `ietf-netconf`-shaped envelope: its built-in operations carry
+    /// the payload in an **`anyxml`** (`edit-config`'s `config`,
+    /// `get-config`'s `filter`), exactly like the real module. When that module
+    /// is compiled, the payload wrapper maps to a schema node whose kind is
+    /// `anyxml`, not to the "unmodeled envelope" path.
+    const MOD_NETCONF: &str = r#"module ietf-netconf {
+  yang-version 1.1;
+  namespace "urn:ietf:params:xml:ns:netconf:base:1.0";
+  prefix nc;
+  revision 2026-01-01;
+  rpc edit-config {
+    input {
+      leaf default-operation { type string; }
+      anyxml config;
+    }
+  }
+  rpc get-config {
+    input {
+      anyxml filter;
+    }
+  }
+}"#;
+
     fn compile() -> Arc<Library> {
         let mut repo = Repository::new();
         repo.upsert("/if.yang", MOD_IF);
+        repo.compile().library.expect("library")
+    }
+
+    fn compile_envelope() -> Arc<Library> {
+        let mut repo = Repository::new();
+        repo.upsert("/if.yang", MOD_IF);
+        repo.upsert("/ietf-netconf.yang", MOD_NETCONF);
         repo.compile().library.expect("library")
     }
 
@@ -519,6 +587,98 @@ mod tests {
         assert_eq!(unknown.len(), 2, "{:?}", map.diags);
         // <interfaces> itself maps (namespace + top node).
         assert!(map.resolved(find(&doc, "interfaces")).is_some());
+    }
+
+    #[test]
+    fn payload_wrapper_nested_in_an_unmodeled_envelope_maps_its_data_tree() {
+        let lib = compile();
+        // The common authoring template: a `<config>` payload inside the
+        // built-in (unmodeled) `<edit-config>` operation. The payload body must
+        // still map to data nodes and expand to children — before, the silent
+        // envelope made the whole subtree unmappable, so nested completion had
+        // nothing to expand.
+        let rpc = r#"<rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+  <edit-config>
+    <target><running/></target>
+    <default-operation>merge</default-operation>
+    <config>
+      <interfaces xmlns="urn:if">
+        <interface><name>eth0</name><auto/></interface>
+      </interfaces>
+    </config>
+  </edit-config>
+</rpc>"#;
+        let doc = parse(rpc).expect("parse");
+        let map = map_doc(&doc, &lib);
+        assert!(map.diags.is_empty(), "{:?}", map.diags);
+        // The wrapper itself is a position, not a mapped node; the data tree
+        // below it resolves all the way down (the list key included).
+        assert!(map.resolved(find(&doc, "config")).is_none());
+        assert!(map.resolved(find(&doc, "interfaces")).is_some());
+        assert!(map.resolved(find(&doc, "interface")).is_some());
+        assert!(map.resolved(find(&doc, "name")).is_some());
+
+        // A captured `<rpc-reply>` is the read direction of the same rule:
+        // `<data>` maps its subtree (validation) but is never a write position.
+        let reply = r#"<rpc-reply xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+  <data>
+    <interfaces xmlns="urn:if">
+      <interface><name>eth0</name><auto/></interface>
+    </interfaces>
+  </data>
+</rpc-reply>"#;
+        let doc = parse(reply).expect("parse");
+        let map = map_doc(&doc, &lib);
+        assert!(map.diags.is_empty(), "{:?}", map.diags);
+        assert!(map.resolved(find(&doc, "data")).is_none());
+        assert!(map.resolved(find(&doc, "interfaces")).is_some());
+    }
+
+    #[test]
+    fn anyxml_payload_carrier_maps_its_data_tree() {
+        let lib = compile_envelope();
+        // The schema (a compiled `ietf-netconf`) models `edit-config`'s payload
+        // as `anyxml config`; its content is still a data tree and must map so
+        // nested completion/hover/goto work, instead of turning opaque.
+        let rpc = r#"<rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+  <edit-config>
+    <default-operation>merge</default-operation>
+    <config>
+      <interfaces xmlns="urn:if">
+        <interface><name>eth0</name><auto/></interface>
+      </interfaces>
+    </config>
+  </edit-config>
+</rpc>"#;
+        let doc = parse(rpc).expect("parse");
+        let map = map_doc(&doc, &lib);
+        assert!(map.diags.is_empty(), "{:?}", map.diags);
+        // The `anyxml` node itself maps; below it the data tree resolves.
+        assert!(map.resolved(find(&doc, "config")).is_some());
+        assert!(map.resolved(find(&doc, "interfaces")).is_some());
+        assert!(map.resolved(find(&doc, "interface")).is_some());
+        assert!(map.resolved(find(&doc, "name")).is_some());
+
+        // An element that is not a top-level data node of any compiled module
+        // is still diagnosed inside the payload.
+        let bad = r#"<rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0"><edit-config><config><nope xmlns="urn:if"/></config></edit-config></rpc>"#;
+        let doc = parse(bad).expect("parse");
+        let map = map_doc(&doc, &lib);
+        assert!(
+            map.diags.iter().any(|d| d.code == "netconf_unknown_node"),
+            "{:?}",
+            map.diags
+        );
+
+        // `<filter>` is the other `anyxml` payload carrier, nested under the
+        // built-in `<get-config>`. Its subtree maps, and being a filter it is
+        // exempt from the mandatory/key/choice checks (partial content is
+        // legal there) — no false "missing key" on the list entry.
+        let filt = r#"<rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0"><get-config><filter><interfaces xmlns="urn:if"><interface/></interfaces></filter></get-config></rpc>"#;
+        let doc = parse(filt).expect("parse");
+        let map = map_doc(&doc, &lib);
+        assert!(map.resolved(find(&doc, "interfaces")).is_some());
+        assert!(map.diags.is_empty(), "{:?}", map.diags);
     }
 
     #[test]

@@ -12,7 +12,7 @@ version = "0.7.0"
 
 [grammars.yang]
 repository = "https://github.com/trislu/tree-sitter-yang"
-rev = "274cae2fbb6a798b887dfd3b9102ac7604ef7e43"
+rev = "22d9c170d0246edef0d2fb0dfaf89ccda3226996"
 
 # XML and JSON files are served by Zed's built-in JSON language and by the
 # "XML" extension from the marketplace; the language server simply attaches to

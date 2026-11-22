@@ -34,8 +34,10 @@ python3 scripts/assemble-gif.py assets/frames/xcomp assets/demos/xcomp.gif --fps
 `record-vscode.mjs` starts Xvfb, launches an Extension Development Host with a
 private user-data dir and a private `XDG_RUNTIME_DIR`, drives it over the
 DevTools protocol, writes `assets/frames/<story>/`, and stops everything again.
-It needs `Xvfb`, the `code` install's Electron binary (`/usr/share/code/code`,
-or `DEMO_CODE_LAUNCHER`), and Pillow for the assembly step. Nothing in the
+It needs `Xvfb`, the `code` install's Electron binary (default
+`/usr/share/code/code`, `DEMO_CODE_LAUNCHER` to override), and Pillow for the
+assembly step. `DEMO_DISPLAY` and `DEMO_PORT` move the virtual display and the
+DevTools port when the defaults (`:126`, `9355`) are taken. Nothing in the
 scripts is a build dependency of the extension.
 
 ## Choices that keep a recording reproducible

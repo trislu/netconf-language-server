@@ -32,6 +32,8 @@ customizes highlighting.
   `clients/vscode/src/extension.ts`; templates handled server-side
   (`netconf/insertTemplate`, `src/template.rs`); settings forwarded to the
   server via `workspace/didChangeConfiguration`.
-- **Notes**: the extension currently requires a single workspace folder —
-  multi-root support is planned (see
-  [`../multi-root-workspaces.md`](../multi-root-workspaces.md)).
+- **Notes**: every command is available in any window (an idle one logs why it
+  has no server instead of failing). The server indexes a single folder: the
+  client picks the one workspace folder that holds YANG modules and warns —
+  without blocking the window — when several do. Multi-root support is planned
+  (see [`../multi-root-workspaces.md`](../multi-root-workspaces.md)).

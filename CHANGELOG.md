@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **One VSIX per platform and architecture, published with Trusted
+  Publishing.** `linux-x64`, `linux-arm64` (both static musl), `darwin-x64`,
+  `darwin-arm64`, `win32-x64` and `win32-arm64` are built and packaged
+  separately, so the Marketplace hands each host the build it can run —
+  including the remote side of a Remote-SSH window. A missing `linux-arm64`
+  build used to surface as "language server not found"; an Intel Mac had no
+  binary at all. Publishing exchanges a GitHub OIDC token for a short-lived
+  Marketplace credential (`vsce publish --oidc`), so no personal access token
+  is stored, and a tag that does not name both `Cargo.toml` and
+  `clients/vscode/package.json` fails before anything is built.
+- **A stdio JSON-RPC test harness** (`tests/lsp_stdio.rs`): it spawns the
+  built server on a temporary workspace and covers the initialize handshake,
+  pull diagnostics, hover, completion, shutdown/exit, and a workspace whose
+  XML belongs to no YANG module staying dormant. It answers the
+  `workspace/configuration` request the server sends back, without which a
+  session stalls.
+- **Recorded README demos** (`assets/demos/*.gif`) with the recorder and GIF
+  assembler that produce them (`scripts/record-vscode.mjs`,
+  `scripts/assemble-gif.py`, `docs/notes/demo-recording.md`).
+
+### Changed
+
+- **The extension activates only where there is NETCONF content**
+  (`workspaceContains:**/*.yang`, `onLanguage:yang`) instead of on every
+  window, and serves the one workspace folder that holds YANG modules. Several
+  such folders still produce a warning, but that is now a warning naming them
+  rather than an error, and a window with no YANG folder is left alone: it
+  logs why it stayed idle instead of interrupting the user. The contributed
+  commands stay available in those windows.
+- **Hover snippets are dedented.** A multi-line statement used to start flush
+  with the code fence while its continuation lines kept the file's
+  indentation; the shared prefix is now removed, so the block reads as one
+  statement.
+- **The Zed client downloads the per-target asset**
+  (`netconf-language-server-<os>-<arch>`) instead of an `<os>`-only name, and
+  the release keeps the old `<os>` names as aliases for extensions published
+  before 0.0.2.
+- The bundled server lives at `resources/bin/<platform>-<arch>/`, one binary
+  per VSIX.
+
+### Fixed
+
+- **No error dialog in a workspace of another project.** "open a workspace
+  folder containing .yang files" and "multiple workspaces are not supported"
+  were modal errors shown in windows that had nothing to do with YANG.
+- **Test harness URIs work on Windows** (`file://C:\…` is not a URI).
+- **Document selectors match folders literally**: a folder name containing
+  glob characters (`netconf [2026]`) turned into a pattern and matched no
+  file.
+- **A `workflow_dispatch` from a branch no longer breaks the VSIX path** when
+  the branch name contains a separator.
+
 ## [0.8.0] - 2026-09-17
 
 ### Added

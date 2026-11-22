@@ -8,6 +8,11 @@ and this extension adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-22
+
+Bundled `netconf-language-server` updated to **0.8.1** (no protocol or parse
+change; hover snippets render flush).
+
 - The extension now starts only where there is NETCONF content: a workspace
   containing YANG modules, or a YANG file opened directly. Opening a project of
   another kind no longer produces an error dialog, and a multi-root workspace

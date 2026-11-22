@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-22
+
+No public API change: the server's LSP surface is the same as 0.8.0, and
+valid YANG modules parse to the same trees.
+
 ### Added
 
 - **One VSIX per platform and architecture, published with Trusted

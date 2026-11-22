@@ -340,8 +340,8 @@ impl Server {
             return Ok(None);
         };
         let mut md = format!(
-            "```yang\n{}\n```\n\n`{}` **`{}`** (module `{}`)",
-            snippet,
+            "{}\n\n`{}` **`{}`** (module `{}`)",
+            crate::hover::code_fence(&snippet.to_string()),
             node.kind().as_str(),
             node.name(),
             res.module
@@ -492,8 +492,8 @@ impl Server {
             return Ok(None);
         };
         let mut md = format!(
-            "```yang\n{}\n```\n\n`{}` **`{}`** (module `{}`)",
-            snippet,
+            "{}\n\n`{}` **`{}`** (module `{}`)",
+            crate::hover::code_fence(&snippet.to_string()),
             node.kind().as_str(),
             node.name(),
             res.module

@@ -30,8 +30,46 @@ const BUILTIN_TYPES: &[&str] = &[
     "union",
 ];
 
-fn code_fence(text: &str) -> String {
-    format!("```yang\n{text}\n```")
+/// Byte offset of the first character that is neither a space nor a tab.
+fn indent_of(line: &str) -> usize {
+    line.len() - line.trim_start_matches([' ', '\t']).len()
+}
+
+/// Strip the indentation the continuation lines share.
+///
+/// A hover renders a source span inside a code fence, and the span begins at
+/// the statement keyword: its first line has no leading whitespace while the
+/// lines below it keep the file's. The block then looks ragged — the first line
+/// flush, the rest pushed right. Removing the margin common to the continuation
+/// lines makes the block start at the left edge and keeps the relative nesting
+/// that shows the tree shape.
+///
+/// The first line is left alone: it is already where the dedented block
+/// starts. Blank lines become empty lines instead of keeping stale whitespace.
+pub(crate) fn dedent(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    let Some((first, rest)) = lines.split_first() else {
+        return String::new();
+    };
+    let margin = rest
+        .iter()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| indent_of(line))
+        .min()
+        .unwrap_or(0);
+    let mut out = first.trim_end().to_owned();
+    for line in rest {
+        out.push('\n');
+        // A blank continuation line can be shorter than the margin; cutting it
+        // at its own indentation leaves nothing, which is what it should be.
+        out.push_str(line[indent_of(line).min(margin)..].trim_end());
+    }
+    out
+}
+
+/// A hover code block for a YANG source snippet.
+pub(crate) fn code_fence(text: &str) -> String {
+    format!("```yang\n{}\n```", dedent(text))
 }
 
 /// Raw source of an `import` statement bound to `prefix`, if any.
@@ -420,5 +458,69 @@ mod tests {
         let b = RF.find("refine inner/host").unwrap() + "refine inner/".len() + 1;
         let t = handle(&rope, root, b, "rf", &lib).expect("refine hover");
         assert!(t.contains("refine target node **`host`**"), "{t}");
+    }
+
+    #[test]
+    fn dedent_strips_the_margin_shared_by_continuation_lines() {
+        // A span begins at the statement keyword, so its first line is flush
+        // while the body keeps the file's indentation.
+        assert_eq!(
+            dedent("import extdef {\n    prefix vendor;\n  }"),
+            "import extdef {\n  prefix vendor;\n}"
+        );
+    }
+
+    #[test]
+    fn dedent_keeps_relative_nesting() {
+        assert_eq!(
+            dedent("container c {\n    leaf x {\n      type string;\n    }\n  }"),
+            "container c {\n  leaf x {\n    type string;\n  }\n}"
+        );
+    }
+
+    #[test]
+    fn dedent_leaves_unindented_and_single_line_snippets_alone() {
+        assert_eq!(dedent("leaf x { type string; }"), "leaf x { type string; }");
+        assert_eq!(dedent("leaf a;\nleaf b;"), "leaf a;\nleaf b;");
+        assert_eq!(dedent(""), "");
+    }
+
+    #[test]
+    fn dedent_turns_whitespace_only_lines_into_empty_lines() {
+        assert_eq!(
+            dedent("leaf x {\n    type string;\n   \n  }"),
+            "leaf x {\n  type string;\n\n}"
+        );
+    }
+
+    #[test]
+    fn code_fence_dedents_its_content() {
+        assert_eq!(
+            code_fence("import extdef {\n    prefix vendor;\n  }"),
+            "```yang\nimport extdef {\n  prefix vendor;\n}\n```"
+        );
+    }
+
+    /// The snippet a prefixed-type hover shows must start at the fence's left
+    /// edge, or the block reads as a ragged stack.
+    #[test]
+    fn hover_prefixed_type_renders_a_flush_snippet() {
+        const DEF: &str = "module ext {\n  namespace \"urn:ext\";\n  prefix vendor;\n\
+          typedef speed { type uint32; }\n}\n";
+        const USE: &str = "module app {\n  namespace \"urn:app\";\n  prefix a;\n\
+          import ext {\n    prefix vendor;\n  }\n  leaf x { type vendor:speed; }\n}\n";
+        let mut repo = Repository::new();
+        repo.upsert("/ext.yang", DEF.to_string());
+        repo.upsert("/app.yang", USE.to_string());
+        let out = repo.compile();
+        let lib = out.library.expect("library");
+        let rope = Rope::from_str(USE);
+        let root = repo.statement("/app.yang").expect("root").clone();
+        let b = USE.find("vendor:speed").unwrap() + "vendor:".len();
+        let text = handle(&rope, &root, b, "app", &lib).expect("hover");
+        assert!(
+            text.contains("```yang\nimport ext {\n  prefix vendor;\n}\n```"),
+            "hover text: {text}"
+        );
     }
 }

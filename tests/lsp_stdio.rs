@@ -357,10 +357,28 @@ impl Drop for Session {
     }
 }
 
+/// A `file:` URI for `path`.
+///
+/// The harness cannot borrow the server's converter (this is a binary crate),
+/// so it does the work itself: separators become `/`, a Windows drive letter
+/// gains the leading slash a `file:` URI needs, and everything outside the
+/// URI-safe set is percent-encoded — a temporary directory may live under a
+/// user name with a space in it.
 fn file_uri(path: &Path) -> String {
-    // The fixtures live in the platform temp dir, whose path has no character
-    // that a URI would have to escape.
-    format!("file://{}", path.display())
+    let text = path.to_string_lossy().replace('\\', "/");
+    let mut uri = String::from("file://");
+    if !text.starts_with('/') {
+        uri.push('/');
+    }
+    for byte in text.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' | b':' => {
+                uri.push(byte as char);
+            }
+            other => uri.push_str(&format!("%{other:02X}")),
+        }
+    }
+    uri
 }
 
 fn write_message(stdin: &mut ChildStdin, message: &Value) {
@@ -411,6 +429,21 @@ fn codes(items: &[Value]) -> Vec<String> {
         .filter_map(|item| item.get("code").and_then(Value::as_str))
         .map(str::to_owned)
         .collect()
+}
+
+/// The harness runs on Windows and macOS too, where the naive
+/// `file://` + `path.display()` spelling is not a URI.
+#[test]
+fn file_uri_encodes_a_platform_path() {
+    assert_eq!(
+        file_uri(Path::new("/tmp/netconf demo/#1")),
+        "file:///tmp/netconf%20demo/%231"
+    );
+    // A Windows path, passed as text so the assertion holds on every host.
+    assert_eq!(
+        file_uri(Path::new(r"C:\Users\John Doe\AppData\Local\Temp")),
+        "file:///C:/Users/John%20Doe/AppData/Local/Temp"
+    );
 }
 
 #[test]

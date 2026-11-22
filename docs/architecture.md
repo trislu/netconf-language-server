@@ -645,7 +645,9 @@ Future keys: include dirs for out-of-workspace YANG, diagnostics toggles.
 
 - language id `yang`, `extensions: [".yang"]`; activation is gated to NETCONF
   content — `workspaceContains:**/*.yang` plus `onLanguage:yang`, and the
-  contributed commands activate the extension implicitly;
+  contributed commands activate the extension implicitly. The commands are
+  registered before the folder decision, so a window that ends up serving
+  nothing logs why instead of failing with "command not found";
   `configurationDefaults: { "[yang]": { "editor.semanticHighlighting.enabled": true } }`.
 - settings section `netconf` ([DONE D12]); a `didChangeConfiguration` handler
   forwards `netconf` setting changes to the server.

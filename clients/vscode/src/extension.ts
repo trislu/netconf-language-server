@@ -91,8 +91,102 @@ async function find_language_server(context: ExtensionContext): Promise<string |
     return bundled_path.fsPath
 }
 
+// Glob patterns are still glob syntax when VS Code matches them against a
+// document's `fsPath`, so a folder named `netconf [2026]` would turn into a
+// character class and match nothing — silently, with the extension serving no
+// file at all. `RelativePattern` compares its base literally and normalises it
+// for the platform's separators; the protocol's `DocumentFilter.pattern` type
+// only admits a string, hence the cast.
+function in_folder(folder: Uri, glob: string): string {
+    return new RelativePattern(folder, glob) as unknown as string
+}
+
+// Commands contributed in the manifest have to be registered even when this
+// window ends up serving nothing: VS Code reports a command whose activation
+// left it unregistered as "command not found", which is exactly the kind of
+// notification an extension that serves one language should not produce.
+function register_commands(context: ExtensionContext, get_client: () => LanguageClient | undefined) {
+    // NETCONF skeleton insert commands (M2): forward the active editor + caret
+    // to the server's `netconf/insertTemplate` command, which applies the
+    // template via a workspace edit.
+    const template_commands: Array<[string, string]> = [
+        ["netconf.insertGetConfigRpc", "get-config"],
+        ["netconf.insertEditConfigRpc", "edit-config"],
+        ["netconf.insertHello", "hello"],
+        ["netconf.insertConfigPayload", "config"],
+    ]
+    for (const [command, kind] of template_commands) {
+        context.subscriptions.push(
+            commands.registerCommand(command, async () => {
+                const client = get_client()
+                if (!client) {
+                    log(`${command}: no language server in this window`)
+                    return
+                }
+                const editor = window.activeTextEditor
+                if (!editor) {
+                    return
+                }
+                const sel = editor.selection.active
+                try {
+                    await client.sendRequest(ExecuteCommandRequest.type, {
+                        command: "netconf/insertTemplate",
+                        arguments: [
+                            {
+                                uri: editor.document.uri.toString(),
+                                kind,
+                                position: { line: sel.line, character: sel.character },
+                            },
+                        ],
+                    })
+                } catch (err) {
+                    log(`template insert failed: ${err}`)
+                }
+            }),
+        )
+    }
+
+    // Restart the language server (useful after changing configuration, or
+    // when the server gets into a bad state). `client.restart()` re-runs the
+    // initialize handshake, so the client-driven progress bar covers the
+    // server's workspace rescan again.
+    context.subscriptions.push(
+        commands.registerCommand("netconf.restart", async () => {
+            const client = get_client()
+            if (!client) {
+                log("netconf.restart: no language server in this window")
+                return
+            }
+            log("restarting language client...")
+            try {
+                await window.withProgress(
+                    {
+                        location: ProgressLocation.Notification,
+                        title: "NETCONF Language Server",
+                        cancellable: false,
+                    },
+                    async (progress) => {
+                        progress.report({ message: "Restarting Language Server..." })
+                        await client.restart()
+                    },
+                )
+                log("language client restarted.")
+            } catch (err) {
+                log(`language client restart failed: ${err}`)
+                await window.showErrorMessage(`netconf-language-server: restart failed: ${err}`)
+            }
+        }),
+    )
+    log("commands registered.")
+}
+
 export async function activate(context: ExtensionContext) {
     log(`activating extension ${extension_id}...`)
+
+    // Registered first so that even a window which serves nothing answers its
+    // own commands.
+    let client: LanguageClient | undefined
+    register_commands(context, () => client)
 
     const ws = workspace.workspaceFolders ?? []
     if (ws.length === 0) {
@@ -129,31 +223,32 @@ export async function activate(context: ExtensionContext) {
     const clientOptions: LanguageClientOptions = {
         documentSelector: [
             // YANG modules (authoring) …
-            { language: language_id, pattern: `${root_dir.fsPath}/**/*.yang`, scheme: "file" },
+            { language: language_id, pattern: in_folder(root_dir, "**/*.yang"), scheme: "file" },
             // … and candidate NETCONF instance documents. The server
             // content-sniffs these against the compiled YANG library and
             // stays dormant for files that are not NETCONF (M0, D19). The
             // built-in XML/JSON extensions keep providing tokens/folding/
             // formatting because the server declines those for xml/json.
-            { language: "xml", pattern: `${root_dir.fsPath}/**/*.xml`, scheme: "file" },
-            { language: "json", pattern: `${root_dir.fsPath}/**/*.json`, scheme: "file" },
+            { language: "xml", pattern: in_folder(root_dir, "**/*.xml"), scheme: "file" },
+            { language: "json", pattern: in_folder(root_dir, "**/*.json"), scheme: "file" },
         ],
         diagnosticCollectionName: extension_id,
         outputChannel: output_channel,
     }
 
-    const client = new LanguageClient(
+    const language_client = new LanguageClient(
         extension_id,
         extension_id,
         { run: server_exec, debug: server_exec },
         clientOptions,
     )
+    client = language_client
 
     // Forward configuration changes to the server (it also re-pulls via
     // workspace/configuration on startup).
     context.subscriptions.push(
         workspace.onDidChangeConfiguration((e) => {
-            if (e.affectsConfiguration(extension_id)) {
+            if (client && e.affectsConfiguration(extension_id)) {
                 client.sendNotification("workspace/didChangeConfiguration", {
                     settings: workspace.getConfiguration(extension_id),
                 })
@@ -176,74 +271,10 @@ export async function activate(context: ExtensionContext) {
         },
         async (progress) => {
             progress.report({ message: "Indexing Workspace..." })
-            await client.start()
+            await language_client.start()
         },
     )
     log("language client started.")
-
-    // NETCONF skeleton insert commands (M2): forward the active editor + caret
-    // to the server's `netconf/insertTemplate` command, which applies the
-    // template via a workspace edit.
-    const template_commands: Array<[string, string]> = [
-        ["netconf.insertGetConfigRpc", "get-config"],
-        ["netconf.insertEditConfigRpc", "edit-config"],
-        ["netconf.insertHello", "hello"],
-        ["netconf.insertConfigPayload", "config"],
-    ]
-    for (const [command, kind] of template_commands) {
-        context.subscriptions.push(
-            commands.registerCommand(command, async () => {
-                const editor = window.activeTextEditor
-                if (!editor) {
-                    return
-                }
-                const sel = editor.selection.active
-                try {
-                    await client.sendRequest(ExecuteCommandRequest.type, {
-                        command: "netconf/insertTemplate",
-                        arguments: [
-                            {
-                                uri: editor.document.uri.toString(),
-                                kind,
-                                position: { line: sel.line, character: sel.character },
-                            },
-                        ],
-                    })
-                } catch (err) {
-                    log(`template insert failed: ${err}`)
-                }
-            }),
-        )
-    }
-    log("template commands registered.")
-
-    // Restart the language server (useful after changing configuration, or
-    // when the server gets into a bad state). `client.restart()` re-runs the
-    // initialize handshake, so the client-driven progress bar covers the
-    // server's workspace rescan again.
-    context.subscriptions.push(
-        commands.registerCommand("netconf.restart", async () => {
-            log("restarting language client...")
-            try {
-                await window.withProgress(
-                    {
-                        location: ProgressLocation.Notification,
-                        title: "NETCONF Language Server",
-                        cancellable: false,
-                    },
-                    async (progress) => {
-                        progress.report({ message: "Restarting Language Server..." })
-                        await client.restart()
-                    },
-                )
-                log("language client restarted.")
-            } catch (err) {
-                log(`language client restart failed: ${err}`)
-                await window.showErrorMessage(`netconf-language-server: restart failed: ${err}`)
-            }
-        }),
-    )
-    log("restart command registered.")
 }
 
 export function deactivate() {

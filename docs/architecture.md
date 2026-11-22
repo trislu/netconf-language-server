@@ -641,7 +641,7 @@ Future keys: include dirs for out-of-workspace YANG, diagnostics toggles.
 
 ## 10. VS Code client
 
-`clients/vscode` — extension name/id `netconf` (publisher `k19`, v0.1.0), mirrors gemcap:
+`clients/vscode` — extension name/id `netconf` (publisher `k19`), versioned with the server, mirrors gemcap:
 
 - language id `yang`, `extensions: [".yang"]`; activation is gated to NETCONF
   content — `workspaceContains:**/*.yang` plus `onLanguage:yang`, and the
@@ -775,8 +775,9 @@ Deferred (not shipped in v1): quick-fixes/`codeAction` (D9),
 `didChangeWatchedFiles` re-scan on external file changes, range formatting,
 incremental repo compile, out-of-workspace include dirs, multi-workspace-folder.
 From the instance work: leafref value *chasing* and fully-semantic
-`instance-identifier` (D31), envelope goto modeling (D28 mechanism). See
-`TODO.md` for deferred navigation/highlight ideas.
+`instance-identifier` (D31), envelope goto modeling (D28 mechanism). Goto from
+a `key`/`unique` member list or an `augment` target path is a deferred idea
+(§8, `semantic_token.rs`).
 
 ---
 

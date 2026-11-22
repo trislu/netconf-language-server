@@ -391,7 +391,7 @@ fn role_of_kind(kind: &StatementKind) -> Option<Role> {
         K::Pattern => R::PatternArg,
         // Key/unique member lists and (unquoted) augment target paths are
         // colored as one string for now (REQ1/REQ5); leaf-goto from them is
-        // a deferred idea (see TODO.md).
+        // a deferred idea.
         K::Key | K::Unique | K::Augment => R::ListRefString,
         // Data nodes.
         K::Container

@@ -141,10 +141,13 @@ jobs:
         shell: bash
         working-directory: clients/vscode
         run: |
+          # A branch name may contain `/`; a dispatch must not turn the output
+          # path into a directory that does not exist.
+          ref="${GITHUB_REF_NAME//\//-}"
           mkdir -p ../../target/vsix
           npx --yes @vscode/vsce@latest package \
             --target "${{ matrix.target }}" \
-            --out "../../target/vsix/netconf-${{ matrix.target }}-$GITHUB_REF_NAME.vsix"
+            --out "../../target/vsix/netconf-${{ matrix.target }}-${ref}.vsix"
 
       - uses: actions/upload-artifact@v4
         with:

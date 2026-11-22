@@ -2,7 +2,8 @@
 //
 // Activates the netconf-language-server language client for `yang` documents.
 
-import { commands, ExtensionContext, ProgressLocation, Uri, window, workspace } from "vscode"
+import { commands, ExtensionContext, ProgressLocation, RelativePattern, Uri, window, workspace } from "vscode"
+import type { WorkspaceFolder } from "vscode"
 import {
     Executable,
     ExecuteCommandRequest,
@@ -17,6 +18,44 @@ const output_channel = window.createOutputChannel(extension_id, { log: true })
 
 function log(msg: string) {
     output_channel.appendLine(`[${extension_id}]: ${msg}`)
+}
+
+// Whether `folder` holds at least one `.yang` file. This searches the tree the
+// way the activation glob does (honouring the user's search excludes) and stops
+// at the first hit.
+async function holds_yang(folder: WorkspaceFolder): Promise<boolean> {
+    try {
+        const found = await workspace.findFiles(new RelativePattern(folder, "**/*.yang"), undefined, 1)
+        return found.length > 0
+    } catch (err) {
+        log(`cannot search ${folder.uri.fsPath} for YANG modules: ${err}`)
+        return false
+    }
+}
+
+// The folder to index, or `undefined` when this window has nothing to serve.
+//
+// The server indexes exactly one root, so the folder is picked before the
+// client starts: a workspace folder without a `.yang` file has nothing the
+// server can resolve, and several YANG folders are ambiguous — see
+// docs/multi-root-workspaces.md.
+async function served_folder(folders: readonly WorkspaceFolder[]): Promise<WorkspaceFolder | undefined> {
+    const candidates: WorkspaceFolder[] = []
+    for (const folder of folders) {
+        if (await holds_yang(folder)) {
+            candidates.push(folder)
+        }
+    }
+    if (candidates.length > 1) {
+        // A warning, not an error: the window is usable, the user just has to
+        // decide which folder the server should serve.
+        const names = candidates.map((folder) => folder.name).join(", ")
+        void window.showWarningMessage(
+            `${extension_id}: several workspace folders hold YANG modules (${names}); open one of them to have it served`,
+        )
+        return undefined
+    }
+    return candidates[0]
 }
 
 async function find_language_server(context: ExtensionContext): Promise<string | undefined> {
@@ -46,22 +85,30 @@ async function find_language_server(context: ExtensionContext): Promise<string |
 export async function activate(context: ExtensionContext) {
     log(`activating extension ${extension_id}...`)
 
+    const ws = workspace.workspaceFolders ?? []
+    if (ws.length === 0) {
+        // Reached through `onLanguage:yang`: a lone module opened outside a
+        // workspace has no folder to index. Every other activation route needs
+        // a folder, so this is a window with nothing to serve either way.
+        log("no workspace folder is open; not starting the language server")
+        return
+    }
+
+    // Decide before touching the binary: a window that has nothing to serve
+    // must stay quiet, including when this platform ships no server at all.
+    const root = await served_folder(ws)
+    if (!root) {
+        log("no single folder with YANG modules to serve; not starting the language server")
+        return
+    }
+
     const language_server = await find_language_server(context)
     if (!language_server) {
         await window.showErrorMessage("netconf-language-server: language server not found, you may raise an issue")
         return
     }
 
-    const ws = workspace.workspaceFolders ?? []
-    if (ws.length > 1) {
-        await window.showErrorMessage("netconf-language-server: multiple workspaces are not supported")
-        return
-    }
-    if (ws.length === 0) {
-        await window.showErrorMessage("netconf-language-server: open a workspace folder containing .yang files")
-        return
-    }
-    const root_dir = ws[0].uri
+    const root_dir = root.uri
 
     const server_exec: Executable = {
         command: String(language_server),

@@ -641,17 +641,24 @@ Future keys: include dirs for out-of-workspace YANG, diagnostics toggles.
 
 `clients/vscode` — extension name/id `netconf` (publisher `k19`, v0.1.0), mirrors gemcap:
 
-- language id `yang`, `extensions: [".yang"]`, activation `onStartupFinished`;
+- language id `yang`, `extensions: [".yang"]`; activation is gated to NETCONF
+  content — `workspaceContains:**/*.yang` plus `onLanguage:yang`, and the
+  contributed commands activate the extension implicitly;
   `configurationDefaults: { "[yang]": { "editor.semanticHighlighting.enabled": true } }`.
 - settings section `netconf` ([DONE D12]); a `didChangeConfiguration` handler
   forwards `netconf` setting changes to the server.
 - `vscode-languageclient` ^10.1; server resolution (`find_language_server`):
   1. the `__DEBUG_LSP_SERVER` env override (used by `.vscode/launch.json` against
      `target/debug/netconf-language-server`), else 2. the bundled per-platform
-     binary `resources/bin/netconf-language-server-<platform>`; shows an error
-     when neither exists.
-- **single workspace folder** only: multiple folders, or none, → the client
-  refuses to start (the server scans one root URI, §6.1).
+     binary `resources/bin/<platform>-<arch>/netconf-language-server[.exe]`, the
+     single binary a per-target VSIX carries (`.github/workflows/vsix.yml`);
+     shows an error when neither exists.
+- **one workspace folder** is served: the client picks the folder that holds at
+  least one `.yang` file (the server scans one root URI, §6.1). A window with no
+  such folder — no folder open, or a folder belonging to some other project — is
+  left alone: the client logs why it stayed idle and shows nothing. Several YANG
+  folders are ambiguous and produce a warning rather than an error; see
+  `docs/multi-root-workspaces.md`.
 - debug: F5 `Debug Extension` runs the `npm: build-server-and-client`
   preLaunchTask (`cargo build` + `npm run compile`) then launches an Extension
   Development Host; an `Attach to LSP server` lldb config is also provided.

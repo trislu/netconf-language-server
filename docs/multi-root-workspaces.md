@@ -12,14 +12,16 @@
 
 A NETCONF/YANG user often keeps interdependent vendor/standard trees in
 separate folders (e.g. `vendor-a/`, `vendor-b/`, `standards/`) and opens them
-as a multi-root workspace. Today the extension refuses this outright, and the
-server is architected around a single workspace root.
+as a multi-root workspace. Today the extension serves one folder and warns when
+several hold YANG modules, and the server is architected around a single
+workspace root.
 
 ## Current state (single-root assumptions)
 
 - **Client** (`clients/vscode/src/extension.ts`):
-  - hard-blocks `workspace.workspaceFolders.length > 1`
-    ("multiple workspaces are not supported") and requires at least one folder;
+  - picks the one workspace folder that holds `.yang` files and warns when
+    several do (`served_folder`); a window with no YANG folder is left alone
+    instead of being interrupted;
   - doc selectors are anchored to the single `root_dir`
     (`${root_dir.fsPath}/**/*.{yang,xml,json}`).
 - **Server** (`src/server.rs`):

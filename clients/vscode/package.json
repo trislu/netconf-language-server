@@ -28,7 +28,8 @@
     "Programming Languages"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "workspaceContains:**/*.yang",
+    "onLanguage:yang"
   ],
   "main": "./dist/extension.js",
   "contributes": {

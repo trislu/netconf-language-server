@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-11-23
+
+No public API change and no parse-output change; this release only fixes the
+VSIX packaging that failed for 0.8.1.
+
+### Fixed
+
+- **The extension icon is within the Marketplace's 1024 KB limit.**
+  `resources/images/icon.png` was a 1024×1024 PNG of 1,143 KB, so
+  `vsce publish` rejected every platform with "the provided icon image exceeds
+  the maximum allowed file size of 1024 KB", and 0.8.1 reached crates.io but no
+  VSIX. The icon is now 512×512 (375 KB).
+
 ## [0.8.1] - 2026-11-22
 
 No public API change: the server's LSP surface is the same as 0.8.0, and

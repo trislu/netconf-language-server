@@ -8,6 +8,14 @@ and this extension adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-11-23
+
+Bundled `netconf-language-server` updated to **0.8.2** (no protocol or parse
+change). This is the 0.8.1 feature set with a publishable package: 0.8.1 could
+not be uploaded because its icon exceeded the Marketplace's 1024 KB limit.
+
+- The packaged icon is 512×512 (375 KB) instead of 1024×1024 (1,143 KB).
+
 ## [0.8.1] - 2026-11-22
 
 Bundled `netconf-language-server` updated to **0.8.1** (no protocol or parse

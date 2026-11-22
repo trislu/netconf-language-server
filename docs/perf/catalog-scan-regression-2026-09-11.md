@@ -168,7 +168,7 @@ Contributing, independent of the above:
       the tree-sitter parser's C allocations still hit musl's allocator (22.1 s vs
       1.9 s on a 9 797-file vendor subtree, 67 % sys). With `override`, static musl
       ≈ glibc (12.2 s vs 11.8 s full scan, ~3 % sys) and no glibc version floor is
-      implied. `.github/workflows/github-release.yml` asserts the artifact is static.
+      implied. `.github/workflows/vsix.yml` asserts the artifact is static.
 - [x] Add a **gnu vs musl** A/B job to CI (manual `perf-ab.yml` skeleton) (same scan, same corpus sample) and publish both
       timings, so this cannot silently regress.
 
@@ -404,7 +404,7 @@ t=  56.0s threads= 35 user=  196.5s sys=  433.4s rss=1254.1 MB vol_ctx=9 nonvol_
 | LS parallel-scan switch (**not** the cause) | `netconf-language-server` `71262ee chore: fill catalog in parallel` |
 | LS v0.3.0 release (dependency bump to `yrepo 0.4`) | `62a1738` |
 | LS v0.2.0 benchmark commit ("under 1 min") | `69b2904` |
-| CI musl target | `.github/workflows/github-release.yml` (`x86_64-unknown-linux-musl`) |
+| CI musl target | `.github/workflows/vsix.yml` (`x86_64-unknown-linux-musl`) |
 | LS scan implementation | `src/server.rs` `fill_catalog` / `ensure_scanned` / `initialize` |
 | Catalog API | `yrepo/src/catalog.rs` (`Catalog::scan`, `CatalogIndex::scan_many_files_with`) |
 | Parse/extraction | `yrepo/src/syntax.rs` (`parse`, `collect_tokens`, `augment_quoted_fragments`, `push_fragment`) |

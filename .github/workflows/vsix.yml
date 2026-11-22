@@ -1,0 +1,254 @@
+name: vsix
+
+# A VSIX that carries a binary is per platform and architecture: the manifest
+# records `TargetPlatform`, and the archive must hold exactly one binary. The
+# matrix therefore runs once per pair, on a runner of that pair, and the
+# Marketplace then hands each host the build it can run — including the remote
+# side of a Remote-SSH window, where the extension runs with `extensionKind:
+# workspace` and the binary has to match the remote, not the UI host.
+#
+# A tag builds every target and publishes it; `workflow_dispatch` builds the
+# artifacts without publishing. Pull requests do not run this workflow: the
+# Rust jobs already gate the binary itself, and packaging it six times per PR
+# would not catch anything they miss.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  # A tag that does not name the manifest version packages the old version, and
+  # every publish job then skips it as already published: a green run that
+  # releases nothing. Fail before building instead.
+  version:
+    name: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag names the shipped version
+        run: |
+          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
+            echo "not a release tag; nothing to check"
+            exit 0
+          fi
+          crate=$(python3 -c "import tomllib;print(tomllib.load(open('Cargo.toml','rb'))['package']['version'])")
+          extension=$(python3 -c "import json;print(json.load(open('clients/vscode/package.json'))['version'])")
+          if [[ "$crate" != "$extension" ]]; then
+            echo "Cargo.toml is $crate but clients/vscode/package.json is $extension" >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_REF_NAME" != "v$crate" ]]; then
+            echo "tag $GITHUB_REF_NAME does not name version $crate" >&2
+            exit 1
+          fi
+          echo "$GITHUB_REF_NAME matches Cargo.toml and clients/vscode/package.json"
+
+  package:
+    name: ${{ matrix.target }}
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux artifacts are static musl: the binary must not pin a glibc
+          # version floor on a host we do not control.
+          - target: linux-x64
+            runner: ubuntu-latest
+            triple: x86_64-unknown-linux-musl
+            musl: true
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+            triple: aarch64-unknown-linux-musl
+            musl: true
+          # One macOS runner builds both triples: the SDK links either
+          # architecture.
+          - target: darwin-x64
+            runner: macos-latest
+            triple: x86_64-apple-darwin
+          - target: darwin-arm64
+            runner: macos-latest
+            triple: aarch64-apple-darwin
+          - target: win32-x64
+            runner: windows-latest
+            triple: x86_64-pc-windows-msvc
+          - target: win32-arm64
+            runner: windows-11-arm
+            triple: aarch64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.triple }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install musl toolchain
+        if: matrix.musl
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Build the server
+        shell: bash
+        run: cargo build --release --target ${{ matrix.triple }} --bin netconf-language-server
+
+      - name: Verify the Linux binary is static
+        if: matrix.musl
+        shell: bash
+        run: |
+          binary="target/${{ matrix.triple }}/release/netconf-language-server"
+          file "$binary"
+          file "$binary" | grep -q "static"
+          ! file "$binary" | grep -q "dynamically linked"
+
+      # `resources/bin/` is otherwise empty in a checkout, so the archive holds
+      # exactly the binary staged here. The extension resolves the same path at
+      # runtime (`<platform>-<arch>`); `win32` keeps MSVC's `.exe`.
+      - name: Stage the binary this VSIX carries
+        shell: bash
+        run: |
+          binary="target/${{ matrix.triple }}/release/netconf-language-server"
+          extension=""
+          if [[ "${{ matrix.target }}" == win32-* ]]; then
+            binary="$binary.exe"
+            extension=".exe"
+          fi
+          staged="clients/vscode/resources/bin/${{ matrix.target }}"
+          mkdir -p "$staged" target/artifacts
+          cp "$binary" "$staged/netconf-language-server$extension"
+          chmod +x "$staged/netconf-language-server$extension" 2>/dev/null || true
+          # The GitHub release ships the same binary under a name that says
+          # which host it runs on; artifact names are flat, so it cannot be
+          # the plain binary name.
+          cp "$binary" "target/artifacts/netconf-language-server-${{ matrix.target }}$extension"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install the extension's dependencies
+        working-directory: clients/vscode
+        run: npm ci
+
+      - name: Package
+        shell: bash
+        working-directory: clients/vscode
+        run: |
+          mkdir -p ../../target/vsix
+          npx --yes @vscode/vsce@latest package \
+            --target "${{ matrix.target }}" \
+            --out "../../target/vsix/netconf-${{ matrix.target }}-$GITHUB_REF_NAME.vsix"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix-${{ matrix.target }}
+          path: target/vsix/*.vsix
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: target/artifacts/*
+          if-no-files-found: error
+
+  # One job per target. A Marketplace hiccup on one package then cannot leave
+  # the other five unpublished, and a retry re-runs only the package that
+  # failed; publishing them together would be equivalent when the service
+  # behaves.
+  #
+  # Trusted Publishing: the publisher is linked to this repository on the
+  # Marketplace side, so the job exchanges its OIDC token for a short-lived
+  # credential and no personal access token is stored. `--oidc` needs vsce 4.1
+  # or newer.
+  publish:
+    name: publish ${{ matrix.target }}
+    needs: package
+    # A dispatch of a branch build must not publish; only a tag release does.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    strategy:
+      # Each target is independent; one failure must not cancel the rest.
+      fail-fast: false
+      matrix:
+        target:
+          - linux-x64
+          - linux-arm64
+          - darwin-x64
+          - darwin-arm64
+          - win32-x64
+          - win32-arm64
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vsix-${{ matrix.target }}
+          path: artifact
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The Marketplace is served by Azure DevOps, which answers with an HTML
+      # error page often enough that one attempt is not a release. Publishing
+      # is idempotent — `--skip-duplicate` skips a version already there — so a
+      # retry resumes instead of failing again on the same conflict.
+      - name: Publish ${{ matrix.target }}
+        shell: bash
+        run: |
+          shopt -s nullglob
+          packages=(artifact/*.vsix)
+          if [ "${#packages[@]}" -eq 0 ]; then
+            echo "no VSIX in the vsix-${{ matrix.target }} artifact" >&2
+            exit 1
+          fi
+          for attempt in 1 2 3; do
+            echo "attempt $attempt: publishing ${{ matrix.target }} as $GITHUB_REF_NAME"
+            if npx --yes @vscode/vsce@latest publish \
+                 --oidc --skip-duplicate --packagePath "${packages[@]}"; then
+              exit 0
+            fi
+            echo "attempt $attempt failed; retrying in 30s" >&2
+            sleep 30
+          done
+          exit 1
+
+  release:
+    name: release
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          pattern: vsix-*
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          pattern: binary-*
+          merge-multiple: true
+
+      # Both artifact families carry target-qualified names, so the flat
+      # download above cannot collide.
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          files: release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -58,6 +58,14 @@ async function served_folder(folders: readonly WorkspaceFolder[]): Promise<Works
     return candidates[0]
 }
 
+// The VS Code target this host runs, spelled the way the packaging matrix and
+// the Marketplace name it (`<platform>-<arch>`) — 32-bit Linux is `armhf`, not
+// `arm`.
+function host_target(): string {
+    const arch = process.arch === "arm" ? "armhf" : process.arch
+    return `${process.platform}-${arch}`
+}
+
 async function find_language_server(context: ExtensionContext): Promise<string | undefined> {
     log("finding language server binary...")
     const debug_server = process.env["__DEBUG_LSP_SERVER"]
@@ -66,10 +74,11 @@ async function find_language_server(context: ExtensionContext): Promise<string |
         return debug_server
     }
 
-    const platform = process.platform
-    const ext = platform === "win32" ? ".exe" : ""
-    const binary_name = `${server_name}-${platform}${ext}`
-    const bundled_path = Uri.joinPath(context.extensionUri, "resources", "bin", binary_name)
+    // One VSIX carries one binary: the Marketplace records its target platform
+    // in the manifest and the archive holds only that target's build.
+    const ext = process.platform === "win32" ? ".exe" : ""
+    const binary_name = `${server_name}${ext}`
+    const bundled_path = Uri.joinPath(context.extensionUri, "resources", "bin", host_target(), binary_name)
     const bundled_exist = await workspace.fs.stat(bundled_path).then(
         () => true,
         () => false,
@@ -104,7 +113,9 @@ export async function activate(context: ExtensionContext) {
 
     const language_server = await find_language_server(context)
     if (!language_server) {
-        await window.showErrorMessage("netconf-language-server: language server not found, you may raise an issue")
+        await window.showErrorMessage(
+            `${extension_id}: no language server for ${host_target()}, you may raise an issue`,
+        )
         return
     }
 

@@ -8,3 +8,8 @@ esbuild.js
 **/eslint.config.mjs
 **/*.map
 **/*.ts
+# Marker file, not a binary.
+resources/bin/index.ad
+# The Marketplace README loads these screenshots from raw.githubusercontent, so
+# only the icon has to travel in the archive.
+resources/images/netconf-vscode-*.png

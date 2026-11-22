@@ -1,1 +1,3 @@
-server binary location
+Staged by the packaging matrix: one directory per VS Code target
+(<platform>-<arch>), each holding the single binary that target's VSIX
+carries. The extension resolves resources/bin/<platform>-<arch>/ at runtime.

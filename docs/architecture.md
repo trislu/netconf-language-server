@@ -84,7 +84,7 @@ flowchart LR
 - **`client.rs`**: process-global `Client` in a `OnceCell`; `info!`/`warning!` macros routed to `window/logMessage`; `#![deny(clippy::print_stdout)]` / `print_stderr`.
 - **Main**: `LspService::new(Server::new)` → `tower_lsp_server::Server::new(stdin, stdout, socket).serve(service).await`.
 - **Pull diagnostics** (modern `textDocument/diagnostic`), not `publish_diagnostics`.
-- **Client**: `clients/vscode` with vscode-languageclient 10, `configurationDefaults` enabling semantic highlight, bundled per-platform binary under `resources/bin/`, `__DEBUG_LSP_SERVER` env override for debugging against `target/debug/…`.
+- **Client**: `clients/vscode` with vscode-languageclient 10, `configurationDefaults` enabling semantic highlight, bundled per-target binary under `resources/bin/<platform>-<arch>/` (§10), `__DEBUG_LSP_SERVER` env override for debugging against `target/debug/…`.
 
 ### 2.2 Adopt conceptually from other LSPs
 
@@ -664,6 +664,34 @@ Future keys: include dirs for out-of-workspace YANG, diagnostics toggles.
 - debug: F5 `Debug Extension` runs the `npm: build-server-and-client`
   preLaunchTask (`cargo build` + `npm run compile`) then launches an Extension
   Development Host; an `Attach to LSP server` lldb config is also provided.
+
+### Packaging and release
+
+`.github/workflows/vsix.yml` builds the extension once per VS Code **target**
+(`<platform>-<arch>`): `linux-x64` and `linux-arm64` (both static musl, so the
+binary pins no glibc floor), `darwin-x64`, `darwin-arm64`, `win32-x64`,
+`win32-arm64`. An extension that ships a binary cannot do otherwise: the
+manifest records `TargetPlatform`, the archive may carry only that target's
+binary, and a Remote-SSH window runs the extension on the remote host
+(`extensionKind: workspace`) rather than on the UI machine. So the Marketplace
+hands each host the build it can run, and `resources/bin/<platform>-<arch>/` is
+the only path the client ever needs.
+
+Each job stages exactly the one binary it was built for (`resources/bin/` is
+empty but for its marker in a checkout), runs `vsce package --target <target>`,
+and uploads `vsix-<target>` plus `binary-<target>`. A `version` job fails the
+run before any build when the tag names neither `Cargo.toml` nor
+`clients/vscode/package.json`; without it the publish jobs would skip everything
+as already published and the run would be green while releasing nothing.
+
+Publishing is one job per target with `id-token: write`, running
+`vsce publish --oidc --skip-duplicate` with a few retries — the Marketplace's
+Azure DevOps front end answers with an HTML error page often enough that one
+attempt is not a release, and `--skip-duplicate` makes a retry resume instead of
+conflicting. Trusted Publishing means the Marketplace side holds the link to
+this repository and no personal access token is stored. The GitHub release
+attaches the six VSIXs and the six binaries; crates.io publishing is a separate
+workflow (`cargo-publish.yml`).
 
 Pull diagnostics require client support (`textDocument/diagnostic`) —
 vscode-languageclient 10 handles it; no manual `publishDiagnostics`.

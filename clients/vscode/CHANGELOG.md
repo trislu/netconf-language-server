@@ -6,6 +6,23 @@ documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this extension adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+- The extension now starts only where there is NETCONF content: a workspace
+  containing YANG modules, or a YANG file opened directly. Opening a project of
+  another kind no longer produces an error dialog, and a multi-root workspace
+  serves the one folder that holds YANG modules (several such folders raise a
+  warning instead of an error).
+- Hover code blocks start at the left edge of the fence. A multi-line statement
+  used to keep its continuation lines indented while the first line sat flush,
+  which read as a ragged block.
+- One package per platform and architecture: Linux, macOS and Windows each get
+  x64 and arm64 builds carrying the matching server binary, so the Marketplace
+  installs the one this machine (or its Remote-SSH host) can run. Windows builds
+  now use the MSVC toolchain.
+- The commands stay available in windows that serve nothing; they log instead of
+  failing with "command not found".
+
 ## [0.8.0] - 2026-09-17
 
 - Schema-driven **leaf value completion** in instance documents: `identityref`

@@ -79,15 +79,24 @@ fn find_server_path(
         &zed::LanguageServerInstallationStatus::CheckingForUpdate,
     );
 
-    let (os, _arch) = zed::current_platform();
-    let binary_name = format!(
-        "{THIS_LANGUAGE_SERVER}-{}",
-        match os {
-            Os::Mac => "darwin",
-            Os::Linux => "linux",
-            Os::Windows => "win32.exe",
-        }
-    );
+    // A release carries one binary per platform and architecture, named the way
+    // the packaging matrix names its VS Code targets (`linux-x64`,
+    // `darwin-arm64`, `win32-x64.exe`, …). Asking by OS alone cannot pick
+    // between the two macOS builds or the two Windows ones.
+    let (os, arch) = zed::current_platform();
+    let os = match os {
+        Os::Mac => "darwin",
+        Os::Linux => "linux",
+        Os::Windows => "win32",
+    };
+    let arch = match arch {
+        zed::Architecture::Aarch64 => "arm64",
+        // Zed ships on 64-bit hosts only, so x86-64 is the fallback rather than
+        // a 32-bit build this server does not produce.
+        _ => "x64",
+    };
+    let extension = if os == "win32" { ".exe" } else { "" };
+    let binary_name = format!("{THIS_LANGUAGE_SERVER}-{os}-{arch}{extension}");
 
     // Resolve the binary through the newest *stable* release. Use GitHub's
     // `/releases/latest/download/<asset>` redirect rather than

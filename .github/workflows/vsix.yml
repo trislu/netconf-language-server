@@ -243,6 +243,19 @@ jobs:
 
       # Both artifact families carry target-qualified names, so the flat
       # download above cannot collide.
+      #
+      # The Zed extension asks for `<os>-<arch>` since 0.0.2, but a copy of
+      # 0.0.1 already installed asks for `<os>` alone; it resolves the asset
+      # through `/releases/latest/download/<name>`, so keeping the old names
+      # alive is what stops that install from failing with a 404. The old
+      # pipeline built only musl x64 for Linux, arm64 for macOS and x64 for
+      # Windows, which is what the aliases point at.
+      - name: Add the asset names an older Zed extension still requests
+        run: |
+          cp release/netconf-language-server-linux-x64 release/netconf-language-server-linux
+          cp release/netconf-language-server-darwin-arm64 release/netconf-language-server-darwin
+          cp release/netconf-language-server-win32-x64.exe release/netconf-language-server-win32.exe
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v3
         with:

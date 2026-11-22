@@ -694,8 +694,11 @@ Azure DevOps front end answers with an HTML error page often enough that one
 attempt is not a release, and `--skip-duplicate` makes a retry resume instead of
 conflicting. Trusted Publishing means the Marketplace side holds the link to
 this repository and no personal access token is stored. The GitHub release
-attaches the six VSIXs and the six binaries; crates.io publishing is a separate
-workflow (`cargo-publish.yml`).
+attaches the six VSIXs and the six binaries, named
+`netconf-language-server-<target>[.exe]` so a consumer can tell them apart
+(`clients/zed/src/lib.rs` downloads by `<os>-<arch>`); three `<os>`-only aliases
+ride along for Zed builds released before that naming. crates.io publishing is a
+separate workflow (`cargo-publish.yml`).
 
 Pull diagnostics require client support (`textDocument/diagnostic`) —
 vscode-languageclient 10 handles it; no manual `publishDiagnostics`.
@@ -703,10 +706,13 @@ vscode-languageclient 10 handles it; no manual `publishDiagnostics`.
 ### Zed client (`clients/zed`)
 
 The same server also ships as a **Zed** extension (`clients/zed`, id `Netconf`,
-v0.0.1): it attaches the `netconf-language-server` binary to Zed's YANG / XML /
+v0.0.2): it attaches the `netconf-language-server` binary to Zed's YANG / XML /
 JSON languages and exposes the same **read** (diagnostics & hover) and **write**
 (completion) features — see `clients/zed/README.md` (screenshots under
-`assets/images/netconf-zed-*.png`).
+`assets/images/netconf-zed-*.png`). The binary comes from the
+`lsp.netconf-language-server.binary` setting, then `$PATH`, then the newest
+release's `netconf-language-server-<os>-<arch>` asset — the same per-target
+naming the VSIX matrix produces, so one release serves both clients.
 
 ---
 

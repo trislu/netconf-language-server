@@ -664,6 +664,10 @@ Future keys: include dirs for out-of-workspace YANG, diagnostics toggles.
 - debug: F5 `Debug Extension` runs the `npm: build-server-and-client`
   preLaunchTask (`cargo build` + `npm run compile`) then launches an Extension
   Development Host; an `Attach to LSP server` lldb config is also provided.
+- demos: the README loops under `assets/demos/` are recorded from this extension
+  by `scripts/record-vscode.mjs` (DevTools protocol, Xvfb) and assembled by
+  `scripts/assemble-gif.py`; `docs/notes/demo-recording.md` has the procedure and
+  the choices that keep a recording reproducible.
 
 ### Packaging and release
 

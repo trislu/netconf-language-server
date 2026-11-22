@@ -29,25 +29,25 @@
 **Read** — diagnostics & hover:
 
 <p align="left">
-  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/clients/vscode/resources/images/netconf-vscode-yang-20260905.png" alt="YANG diagnostics & hover" width="720">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/demos/yang.gif" alt="YANG diagnostics & hover" width="720">
 </p>
 
 <p align="left">
-  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/clients/vscode/resources/images/netconf-vscode-xml-20260905.png" alt="XML (NETCONF) diagnostics & hover" width="720">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/demos/xml.gif" alt="XML (NETCONF) diagnostics & hover" width="720">
 </p>
 
 <p align="left">
-  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/clients/vscode/resources/images/netconf-vscode-json-20260905.png" alt="RFC 7951 JSON diagnostics & hover" width="720">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/demos/json.gif" alt="RFC 7951 JSON diagnostics & hover" width="720">
 </p>
 
 **Write** — completion:
 
 <p align="left">
-  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/clients/vscode/resources/images/netconf-vscode-xcomp-20260905.png" alt="XML completion" width="720">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/demos/xcomp.gif" alt="XML completion" width="720">
 </p>
 
 <p align="left">
-  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/clients/vscode/resources/images/netconf-vscode-jcomp-20260905.png" alt="JSON completion" width="720">
+  <img src="https://raw.githubusercontent.com/trislu/netconf-language-server/master/assets/demos/jcomp.gif" alt="JSON completion" width="720">
 </p>
 
 > For more details, see the [LSP features guide](../../docs/features.md) in the repo.

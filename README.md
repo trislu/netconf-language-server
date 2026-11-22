@@ -31,23 +31,23 @@ reading and writing **NETCONF / YANG** files.
 and **write** (completion):
 
 <p align="left">
-  <img src="clients/vscode/resources/images/netconf-vscode-yang-20260905.png" alt="YANG diagnostics & hover" width="720">
+  <img src="assets/demos/yang.gif" alt="YANG diagnostics & hover" width="720">
 </p>
 
 <p align="left">
-  <img src="clients/vscode/resources/images/netconf-vscode-xml-20260905.png" alt="XML (NETCONF) diagnostics & hover" width="720">
+  <img src="assets/demos/xml.gif" alt="XML (NETCONF) diagnostics & hover" width="720">
 </p>
 
 <p align="left">
-  <img src="clients/vscode/resources/images/netconf-vscode-json-20260905.png" alt="RFC 7951 JSON diagnostics & hover" width="720">
+  <img src="assets/demos/json.gif" alt="RFC 7951 JSON diagnostics & hover" width="720">
 </p>
 
 <p align="left">
-  <img src="clients/vscode/resources/images/netconf-vscode-xcomp-20260905.png" alt="XML completion" width="720">
+  <img src="assets/demos/xcomp.gif" alt="XML completion" width="720">
 </p>
 
 <p align="left">
-  <img src="clients/vscode/resources/images/netconf-vscode-jcomp-20260905.png" alt="JSON completion" width="720">
+  <img src="assets/demos/jcomp.gif" alt="JSON completion" width="720">
 </p>
 
 §2. From [zed](clients/zed), same **read** (diagnostics & hover)

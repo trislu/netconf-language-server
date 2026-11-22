@@ -1,0 +1,9 @@
+{
+  "name": "netconf-demo-scripts",
+  "private": true,
+  "type": "module",
+  "description": "Recording helpers for the README demos. Not a package dependency of anything.",
+  "devDependencies": {
+    "playwright-core": "^1.58.0"
+  }
+}

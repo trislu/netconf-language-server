@@ -1,2 +1,7 @@
 /target
 *.code-workspace
+# Demo recording workspace and intermediate frames (the GIFs in assets/demos
+# are committed; the PNGs they are built from are not).
+/scratch
+/assets/frames
+/scripts/node_modules

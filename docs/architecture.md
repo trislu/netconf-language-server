@@ -98,7 +98,9 @@ flowchart LR
 
 - Blocking synchronous filesystem work inside async request paths.
 - Coarse invalidation of the whole semantic cache on every keystroke (we get this handled differently — §6 full-workspace compile).
-- No automated LSP-level tests. Tests shipped are **unit-level**: feature logic is driven against a scripted `yrepo` repository (`goto.rs`/`hover.rs`) plus the vendored highlight corpus (`semantic_token.rs`, §11). A full stdio JSON-RPC integration harness is still a future addition.
+- Treating handler-level unit tests as enough for LSP behaviour: the contract is
+  what crosses the wire, so `tests/lsp_stdio.rs` drives the built binary over
+  stdio with `Content-Length` framing (§11).
 
 ---
 
@@ -682,7 +684,18 @@ JSON languages and exposes the same **read** (diagnostics & hover) and **write**
 - **`#[non_exhaustive]`** on `StatementKind`, `DiagnosticCode` → wildcard arms (`K::Unknown(_)` / `_`) in goto/hover/highlight/diagnostic.
 - **Non-goals v1**: `.yin`, network/`yangcatalog` fetch, *leafref / `instance-identifier` XPath resolution* (and leafref value *chasing*, D31 — scalar leaf *value* checks are in, M5), full deviation add/delete/replace semantics, incremental repo compile, multi-workspace-folder. *(Type-chain & identity-derivation existence resolution and the leaf restriction facets now come from `yrepo`; `union` values are deliberately not checked, D31.)*
 - **Logging** discipline as gemcap (window/logMessage only via `client.rs`; `#![deny(clippy::print_stdout)]`/`print_stderr`). Errors surfaced as LSP errors, never panics on user content.
-- **Tests**: unit tests in `goto.rs`/`hover.rs` over a scripted `yrepo` repository, plus the `semantic_token.rs` suite — delta-decode helpers, multi-line token splitting, per-shape assertions (`highlight_known_shapes_are_covered`) and a **coverage regression guard** over the vendored `testdata/highlight` corpus (`highlight_coverage_matches_baseline` vs `baseline.json`: 7 files, 275 word tokens, 0 uncovered; re-bless with the ignored `bless_highlight_baseline`). Dev tools for auditing `yrepo` over a tree / single file (`inspect`/`probe`) and profiling it (`perf`, time + RSS) live in the sibling `yrepo` crate as `examples/`. A full stdio JSON-RPC integration harness is still future work.
+- **Tests**: unit tests in `goto.rs`/`hover.rs` over a scripted `yrepo` repository, plus the `semantic_token.rs` suite — delta-decode helpers, multi-line token splitting, per-shape assertions (`highlight_known_shapes_are_covered`) and a **coverage regression guard** over the vendored `testdata/highlight` corpus (`highlight_coverage_matches_baseline` vs `baseline.json`: 7 files, 275 word tokens, 0 uncovered; re-bless with the ignored `bless_highlight_baseline`). Dev tools for auditing `yrepo` over a tree / single file (`inspect`/`probe`) and profiling it (`perf`, time + RSS) live in the sibling `yrepo` crate as `examples/`.
+- **LSP harness** (`tests/lsp_stdio.rs`): an integration test crate that spawns
+  `CARGO_BIN_EXE_netconf-language-server` on a workspace it writes into a
+  temporary directory and speaks JSON-RPC to it over stdio. It answers the
+  `workspace/configuration` request the server sends from `initialized`
+  (without an answer the session stalls — the service runs
+  `concurrency_level(1)`), reads replies on a worker thread so a missing
+  response fails in 60 s instead of hanging, and asserts the initialize
+  capabilities, unresolved-import/typedef diagnostics, a typedef-chain hover,
+  completion candidates, XML and RFC 7951 value diagnostics, the dedented
+  hover snippet, and that a workspace whose XML belongs to no YANG module
+  stays dormant without an error message.
 
 ---
 

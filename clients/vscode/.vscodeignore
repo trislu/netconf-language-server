@@ -1,6 +1,4 @@
 .vscode/**
-.vscode-test/**
-out/**
 node_modules/**
 src/**
 .gitignore
@@ -10,4 +8,3 @@ esbuild.js
 **/eslint.config.mjs
 **/*.map
 **/*.ts
-**/.vscode-test.*

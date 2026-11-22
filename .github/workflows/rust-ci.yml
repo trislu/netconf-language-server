@@ -19,10 +19,15 @@ jobs:
       - uses: dorny/paths-filter@v4
         id: changes
         with:
+          # The stdio harness under tests/ drives the built binary, and the
+          # unit tests read the demo modules under examples/.
           filters: |
             any:
               - 'Cargo.toml'
+              - 'Cargo.lock'
               - 'src/**'
+              - 'tests/**'
+              - 'examples/**'
 
       - name: Set up Rust
         if: steps.changes.outputs.any == 'true'
@@ -61,10 +66,15 @@ jobs:
       - uses: dorny/paths-filter@v4
         id: changes
         with:
+          # The stdio harness under tests/ drives the built binary, and the
+          # unit tests read the demo modules under examples/.
           filters: |
             any:
               - 'Cargo.toml'
+              - 'Cargo.lock'
               - 'src/**'
+              - 'tests/**'
+              - 'examples/**'
 
       - name: Set up Rust
         if: steps.changes.outputs.any == 'true'

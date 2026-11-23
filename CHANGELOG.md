@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-23
+
+No public API change and no parse-output change for valid modules: hover and
+go-to-definition now read the caret position inside prefixed references and
+path arguments.
+
+### Added
+
+- **The extension is published to Open VSX too.** Each tagged release uploads
+  the six platform packages with `ovsx publish --trusted-publishing`, so
+  editors that read Open VSX (VSCodium, Theia, Gitpod) get the same builds as
+  the Marketplace. The registry exchanges the workflow's OIDC token for a
+  short-lived token scoped to `k19.netconf`, so no access token is stored.
+- **Path arguments follow the caret.** In an `augment`, `deviation`, or
+  `leafref` `path` argument, a segment under the caret resolves to the node at
+  that position, and a segment prefix resolves to its `import`; a caret inside
+  a predicate keeps resolving the whole path.
+
 ### Fixed
 
 - **Hover and go-to-definition agree on a prefixed reference.** In
@@ -17,10 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   definition in that module (`typedef`, `identity`, `grouping`, `feature`, or
   `extension`). Hover used to describe the prefix wherever the caret was,
   while goto jumped to the definition.
-- **Path arguments follow the caret.** In an `augment`, `deviation`, or
-  `leafref` `path` argument, a segment under the caret resolves to the node at
-  that position, and a segment prefix resolves to its `import`; a caret inside
-  a predicate keeps resolving the whole path.
 
 ## [0.8.2] - 2026-11-23
 

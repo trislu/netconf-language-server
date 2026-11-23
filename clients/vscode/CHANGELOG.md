@@ -8,6 +8,19 @@ and this extension adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-23
+
+Bundled `netconf-language-server` updated to **0.9.0** (no protocol or parse
+change; hover and go-to-definition now follow the caret).
+
+- Go to Definition and hover on a `prefix:name` reference treat the two halves
+  separately: the prefix opens its `import` statement, the local name opens the
+  `typedef`, `identity`, `grouping`, `feature`, or `extension` it names.
+- Path arguments (`augment`, `deviation`, `leafref` `path`) resolve the segment
+  under the caret instead of only the final node; a prefix inside a path opens
+  its `import`.
+- The extension is also published to Open VSX from the same tag.
+
 ## [0.8.2] - 2026-11-23
 
 Bundled `netconf-language-server` updated to **0.8.2** (no protocol or parse

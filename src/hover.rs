@@ -7,6 +7,8 @@
 use ropey::Rope;
 use yrepo::{Library, Statement, StatementKind};
 
+use crate::goto::{RefPart, ref_part_at};
+
 /// RFC 7950 built-in type names (skip hover chains for these).
 const BUILTIN_TYPES: &[&str] = &[
     "binary",
@@ -162,6 +164,12 @@ pub(crate) fn handle(
             Some((p, l)) => (Some(p), l),
             None => (None, text.as_str()),
         };
+        // The head splits as well: the prefix names its import, the local
+        // name the extension.
+        if let Some((RefPart::Prefix, _)) = ref_part_at(rope, kw.clone(), byte) {
+            let prefix = prefix?;
+            return prefixed_ref(rope, root, scope, lib, prefix);
+        }
         let module = match prefix {
             Some(p) => lib.prefix_to_module(scope, p)?,
             None => scope,
@@ -194,17 +202,19 @@ pub(crate) fn handle(
             }
             Some(out)
         }
-        K::Type if split.is_some() => {
-            let prefix = split?.0;
-            prefixed_ref(rope, root, scope, lib, prefix)
-        }
         K::Type => {
-            let local = name;
-            if BUILTIN_TYPES.contains(&local) {
-                return Some(format!("built-in type **`{local}`**"));
+            // A prefixed reference is two references: the prefix names its
+            // `import` binding, the local name a typedef in that module.
+            if let Some((RefPart::Prefix, _)) = ref_part_at(rope, arg.range.clone(), byte) {
+                let prefix = split?.0;
+                return prefixed_ref(rope, root, scope, lib, prefix);
             }
-            let r = lib.resolve_type(scope, local)?;
-            let mut out = format!("**type** `{local}`");
+            // A builtin is never prefixed, so this only matches a bare name.
+            if BUILTIN_TYPES.contains(&name) {
+                return Some(format!("built-in type **`{name}`**"));
+            }
+            let r = lib.resolve_type(scope, name)?;
+            let mut out = format!("**type** `{name}`");
             for step in &r.typedefs {
                 out.push_str(&format!(
                     "\n- typedef `{}` (in module `{}`)",
@@ -219,11 +229,13 @@ pub(crate) fn handle(
             }
             Some(out)
         }
-        K::Base if split.is_some() => {
-            let prefix = split?.0;
-            prefixed_ref(rope, root, scope, lib, prefix)
-        }
         K::Base => {
+            // Same split as `type`: the prefix names its import, the local
+            // name an identity in that module.
+            if let Some((RefPart::Prefix, _)) = ref_part_at(rope, arg.range.clone(), byte) {
+                let prefix = split?.0;
+                return prefixed_ref(rope, root, scope, lib, prefix);
+            }
             let r = lib.resolve_identity(scope, name)?;
             let mut out = format!(
                 "**identity** `{}` (module `{}`)",
@@ -235,6 +247,10 @@ pub(crate) fn handle(
             Some(out)
         }
         K::IfFeature => {
+            if let Some((RefPart::Prefix, _)) = ref_part_at(rope, arg.range.clone(), byte) {
+                let prefix = split?.0;
+                return prefixed_ref(rope, root, scope, lib, prefix);
+            }
             let (prefix, local) = match split {
                 Some((p, l)) => (Some(p), l),
                 None => (None, name),
@@ -247,6 +263,10 @@ pub(crate) fn handle(
             Some(format!("feature **`{local}`** (module `{module}`)"))
         }
         K::Default => {
+            if let Some((RefPart::Prefix, _)) = ref_part_at(rope, arg.range.clone(), byte) {
+                let prefix = split?.0;
+                return prefixed_ref(rope, root, scope, lib, prefix);
+            }
             let (prefix, local) = match split {
                 Some((p, l)) => (Some(p), l),
                 None => (None, name),
@@ -266,14 +286,19 @@ pub(crate) fn handle(
             Some(format!("enum value **`{member}`**"))
         }
         K::Uses => {
-            if let Some((prefix, local)) = split {
-                if let Some(snippet) = prefixed_ref(rope, root, scope, lib, prefix) {
-                    let out = format!("grouping **`{local}`** via prefix\n{snippet}");
-                    return Some(out);
-                }
-                return None;
+            if let Some((RefPart::Prefix, _)) = ref_part_at(rope, arg.range.clone(), byte) {
+                let prefix = split?.0;
+                return prefixed_ref(rope, root, scope, lib, prefix);
             }
-            let g = lib.search_grouping(scope, name)?;
+            let (prefix, local) = match split {
+                Some((p, l)) => (Some(p), l),
+                None => (None, name),
+            };
+            let module = match prefix {
+                Some(p) => lib.prefix_to_module(scope, p)?,
+                None => scope,
+            };
+            let g = lib.search_grouping(module, local)?;
             Some(format!(
                 "grouping **`{}`** (defined in module `{}`)",
                 g.name, g.defining.url
@@ -501,26 +526,103 @@ mod tests {
         );
     }
 
-    /// The snippet a prefixed-type hover shows must start at the fence's left
-    /// edge, or the block reads as a ragged stack.
-    #[test]
-    fn hover_prefixed_type_renders_a_flush_snippet() {
-        const DEF: &str = "module ext {\n  namespace \"urn:ext\";\n  prefix vendor;\n\
-          typedef speed { type uint32; }\n}\n";
-        const USE: &str = "module app {\n  namespace \"urn:app\";\n  prefix a;\n\
-          import ext {\n    prefix vendor;\n  }\n  leaf x { type vendor:speed; }\n}\n";
+    const EXT: &str = "module ext {\n  namespace \"urn:ext\";\n  prefix vendor;\n\
+      typedef speed { type uint32; }\n  identity base-id;\n  feature turbo;\n\
+      grouping cfg { leaf host { type string; } }\n\
+      extension info { argument name; }\n}\n";
+    const APP: &str = "module app {\n  namespace \"urn:app\";\n  prefix a;\n\
+      import ext {\n    prefix vendor;\n  }\n\
+      leaf x { type vendor:speed; }\n\
+      identity derived { base vendor:base-id; }\n\
+      leaf f { if-feature vendor:turbo; type string; }\n\
+      container uses-cfg { uses vendor:cfg; }\n\
+      leaf d { type identityref { base vendor:base-id; } default vendor:base-id; }\n\
+      vendor:info \"x\";\n}\n";
+
+    fn prefixed_ref_repo() -> (Rope, yrepo::Statement, std::sync::Arc<yrepo::Library>) {
         let mut repo = Repository::new();
-        repo.upsert("/ext.yang", DEF.to_string());
-        repo.upsert("/app.yang", USE.to_string());
+        repo.upsert("/ext.yang", EXT.to_string());
+        repo.upsert("/app.yang", APP.to_string());
         let out = repo.compile();
         let lib = out.library.expect("library");
-        let rope = Rope::from_str(USE);
+        let rope = Rope::from_str(APP);
         let root = repo.statement("/app.yang").expect("root").clone();
-        let b = USE.find("vendor:speed").unwrap() + "vendor:".len();
-        let text = handle(&rope, &root, b, "app", &lib).expect("hover");
+        (rope, root, lib)
+    }
+
+    /// The prefix half names the `import` that binds it, and the snippet must
+    /// start at the fence's left edge or the block reads as a ragged stack.
+    #[test]
+    fn hover_on_a_prefixed_ref_prefix_shows_the_import() {
+        let (rope, root, lib) = prefixed_ref_repo();
+        let at = APP.find("vendor:speed").unwrap();
+        // Both the prefix and the colon resolve to the binding.
+        for byte in [at, at + "vendor".len()] {
+            let text = handle(&rope, &root, byte, "app", &lib).expect("hover");
+            assert!(text.contains("prefix **`vendor`**"), "{byte}: {text}");
+            assert!(
+                text.contains("```yang\nimport ext {\n  prefix vendor;\n}\n```"),
+                "{byte}: {text}"
+            );
+        }
+    }
+
+    /// The local-name half resolves like a bare name: the typedef chain for a
+    /// type, the identity for a base.
+    #[test]
+    fn hover_on_a_prefixed_ref_name_shows_the_definition() {
+        let (rope, root, lib) = prefixed_ref_repo();
+
+        let b = APP.find("vendor:speed").unwrap() + "vendor:".len();
+        let text = handle(&rope, &root, b, "app", &lib).expect("type hover");
+        assert!(text.contains("**type** `vendor:speed`"), "{text}");
+        assert!(text.contains("typedef `speed` (in module `ext`)"), "{text}");
+        assert!(text.contains("→ built-in **`uint32`**"), "{text}");
+
+        let b = APP.find("vendor:base-id").unwrap() + "vendor:".len();
+        let text = handle(&rope, &root, b, "app", &lib).expect("base hover");
         assert!(
-            text.contains("```yang\nimport ext {\n  prefix vendor;\n}\n```"),
-            "hover text: {text}"
+            text.contains("**identity** `base-id` (module `ext`)"),
+            "{text}"
         );
+    }
+
+    /// Every prefixed reference splits the same way, not just `type`/`base`.
+    #[test]
+    fn hover_splits_uses_if_feature_default_and_extension_at_the_colon() {
+        let (rope, root, lib) = prefixed_ref_repo();
+
+        let references = [
+            (
+                "if-feature ",
+                APP.find("if-feature vendor:turbo").unwrap(),
+                "feature **`turbo`** (module `ext`)",
+            ),
+            (
+                "uses ",
+                APP.find("uses vendor:cfg").unwrap(),
+                "grouping **`cfg`**",
+            ),
+            (
+                "default ",
+                APP.find("default vendor:base-id").unwrap(),
+                "identity value **`base-id`** (module `ext`)",
+            ),
+        ];
+        for (keyword, at, definition) in references {
+            let start = at + keyword.len();
+            let text = handle(&rope, &root, start, "app", &lib).expect("prefix hover");
+            assert!(text.contains("prefix **`vendor`**"), "{keyword}: {text}");
+            let text =
+                handle(&rope, &root, start + "vendor:".len(), "app", &lib).expect("name hover");
+            assert!(text.contains(definition), "{keyword}: {text}");
+        }
+
+        // An extension usage head is `prefix:name` too.
+        let at = APP.find("vendor:info").unwrap();
+        let text = handle(&rope, &root, at, "app", &lib).expect("head prefix hover");
+        assert!(text.contains("prefix **`vendor`**"), "{text}");
+        let text = handle(&rope, &root, at + "vendor:".len(), "app", &lib).expect("head hover");
+        assert!(text.contains("extension **`info`**"), "{text}");
     }
 }

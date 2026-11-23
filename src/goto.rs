@@ -50,6 +50,38 @@ fn split_ref(name: &str) -> (Option<&str>, &str) {
     }
 }
 
+/// Which half of a `prefix:name` reference a caret sits on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RefPart {
+    /// Before the `:`: the prefix, defined by an `import` binding.
+    Prefix,
+    /// After the `:`: a name defined in the module the prefix binds.
+    Name,
+}
+
+/// The half of a prefixed token that `byte` falls on, with that half's byte
+/// range.
+///
+/// The token is a statement argument (`type`, `uses`, `if-feature`, `default`,
+/// `base`) or an extension usage head; each spells a reference as
+/// `prefix:name`. The colon belongs to the prefix side, so no byte between the
+/// two halves is a dead click. `None` for an unprefixed token.
+pub(crate) fn ref_part_at(
+    rope: &Rope,
+    range: Range<usize>,
+    byte: usize,
+) -> Option<(RefPart, Range<usize>)> {
+    let raw = rope.get_byte_slice(range.clone())?;
+    let colon = raw.bytes().position(|b| b == b':')?;
+    let prefix_end = range.start + colon;
+    let name_start = prefix_end + 1;
+    if byte < name_start {
+        Some((RefPart::Prefix, range.start..prefix_end))
+    } else {
+        Some((RefPart::Name, name_start..range.end))
+    }
+}
+
 /// The deepest `leaf`/`leaf-list`/`typedef` ancestor containing `byte` — used
 /// to resolve a `default` to an enum member of its `type enumeration`.
 fn owner_data_node(root: &Statement, byte: usize) -> Option<&Statement> {
@@ -94,6 +126,53 @@ fn file_top(url: &str) -> Target {
     }
 }
 
+/// The definition a prefix names: the `import` that binds it, or the module's
+/// own `prefix` statement.
+///
+/// An `import` without a `prefix` statement binds the module name
+/// (RFC 7950 §7.1.5.1), so its argument is the target then.
+fn prefix_target(
+    root: &Statement,
+    url: &str,
+    prefix: &str,
+    origin_range: Range<usize>,
+) -> Option<Target> {
+    use StatementKind as K;
+    for imp in root.find(&[K::Import]) {
+        let Some(module_arg) = imp.arg.as_ref() else {
+            continue;
+        };
+        let (bound, target_range) = match imp.find_one(K::Prefix).and_then(|p| p.arg.as_ref()) {
+            Some(p) => (p.name(), p.range.clone()),
+            None => (module_arg.name(), module_arg.range.clone()),
+        };
+        if bound == prefix {
+            return Some(Target {
+                url: url.to_owned(),
+                target_range,
+                origin_range,
+            });
+        }
+    }
+    // The module's own prefix: its `prefix` statement, or the `prefix` inside
+    // a submodule's `belongs-to`.
+    let own = root
+        .find_one(K::Prefix)
+        .or_else(|| {
+            root.find_one(K::BelongsTo)
+                .and_then(|b| b.find_one(K::Prefix))
+        })
+        .and_then(|p| p.arg.as_ref())?;
+    if own.name() != prefix {
+        return None;
+    }
+    Some(Target {
+        url: url.to_owned(),
+        target_range: own.range.clone(),
+        origin_range,
+    })
+}
+
 /// Build the jump target list for the statement under `byte`.
 pub(crate) fn resolve(
     rope: &Rope,
@@ -115,6 +194,22 @@ pub(crate) fn resolve(
         }
         let text = rope.get_byte_slice(kw.clone())?.to_string();
         let (prefix, local) = split_ref(&text);
+        // The head splits like any prefixed reference: the prefix names its
+        // import, the local name the extension.
+        if let Some((part, range)) = ref_part_at(rope, kw.clone(), byte) {
+            return match part {
+                RefPart::Prefix => prefix_target(root, url, prefix?, range).map(|t| vec![t]),
+                RefPart::Name => {
+                    let module = module_for(scope, Some(prefix?), lib)?;
+                    let ext = lib.search_extension(module, local)?;
+                    Some(vec![Target {
+                        url: ext.defining.url.to_string(),
+                        target_range: ext.defining.range.clone(),
+                        origin_range: range,
+                    }])
+                }
+            };
+        }
         let module = module_for(scope, prefix, lib)?;
         let ext = lib.search_extension(module, local)?;
         return Some(vec![Target {
@@ -146,9 +241,26 @@ pub(crate) fn resolve(
             file_top(&url)
         }
         K::Uses => {
-            let (prefix, local) = split_ref(name);
-            let module = module_for(scope, prefix, lib)?;
-            let g = lib.search_grouping(module, local)?;
+            // Same split as `type`: the prefix names its import, the local
+            // name a grouping.
+            if let Some((part, range)) = ref_part_at(rope, arg.range.clone(), byte) {
+                let (Some(prefix), local) = split_ref(name) else {
+                    return None;
+                };
+                return match part {
+                    RefPart::Prefix => prefix_target(root, url, prefix, range).map(|t| vec![t]),
+                    RefPart::Name => {
+                        let module = module_for(scope, Some(prefix), lib)?;
+                        let g = lib.search_grouping(module, local)?;
+                        Some(vec![Target {
+                            url: g.defining.url.to_string(),
+                            target_range: g.defining.range.clone(),
+                            origin_range: range,
+                        }])
+                    }
+                };
+            }
+            let g = lib.search_grouping(scope, name)?;
             Target {
                 url: g.defining.url.to_string(),
                 target_range: g.defining.range.clone(),
@@ -156,12 +268,30 @@ pub(crate) fn resolve(
             }
         }
         K::Type => {
-            let (prefix, local) = split_ref(name);
-            if BUILTIN_TYPES.contains(&local) {
+            // A prefixed reference names two definitions: the prefix its
+            // `import` binding, the local name a typedef. The caret picks.
+            if let Some((part, range)) = ref_part_at(rope, arg.range.clone(), byte) {
+                let (Some(prefix), local) = split_ref(name) else {
+                    return None;
+                };
+                return match part {
+                    RefPart::Prefix => prefix_target(root, url, prefix, range).map(|t| vec![t]),
+                    RefPart::Name => {
+                        let module = module_for(scope, Some(prefix), lib)?;
+                        let t = lib.search_type(module, local)?;
+                        Some(vec![Target {
+                            url: t.defining.url.to_string(),
+                            target_range: t.defining.range.clone(),
+                            origin_range: range,
+                        }])
+                    }
+                };
+            }
+            // Unprefixed: a builtin has no definition to jump to.
+            if BUILTIN_TYPES.contains(&name) {
                 return None;
             }
-            let module = module_for(scope, prefix, lib)?;
-            let t = lib.search_type(module, local)?;
+            let t = lib.search_type(scope, name)?;
             Target {
                 url: t.defining.url.to_string(),
                 target_range: t.defining.range.clone(),
@@ -169,9 +299,26 @@ pub(crate) fn resolve(
             }
         }
         K::Base => {
-            let (prefix, local) = split_ref(name);
-            let module = module_for(scope, prefix, lib)?;
-            let id = lib.search_identity(module, local)?;
+            // Same split as `type`: the prefix names its import, the local
+            // name an identity in that module.
+            if let Some((part, range)) = ref_part_at(rope, arg.range.clone(), byte) {
+                let (Some(prefix), local) = split_ref(name) else {
+                    return None;
+                };
+                return match part {
+                    RefPart::Prefix => prefix_target(root, url, prefix, range).map(|t| vec![t]),
+                    RefPart::Name => {
+                        let module = module_for(scope, Some(prefix), lib)?;
+                        let id = lib.search_identity(module, local)?;
+                        Some(vec![Target {
+                            url: id.defining.url.to_string(),
+                            target_range: id.defining.range.clone(),
+                            origin_range: range,
+                        }])
+                    }
+                };
+            }
+            let id = lib.search_identity(scope, name)?;
             Target {
                 url: id.defining.url.to_string(),
                 target_range: id.defining.range.clone(),
@@ -179,9 +326,26 @@ pub(crate) fn resolve(
             }
         }
         K::IfFeature => {
-            let (prefix, local) = split_ref(name);
-            let module = module_for(scope, prefix, lib)?;
-            let f = lib.search_feature(module, local)?;
+            // Same split as `type`: the prefix names its import, the local
+            // name a feature.
+            if let Some((part, range)) = ref_part_at(rope, arg.range.clone(), byte) {
+                let (Some(prefix), local) = split_ref(name) else {
+                    return None;
+                };
+                return match part {
+                    RefPart::Prefix => prefix_target(root, url, prefix, range).map(|t| vec![t]),
+                    RefPart::Name => {
+                        let module = module_for(scope, Some(prefix), lib)?;
+                        let f = lib.search_feature(module, local)?;
+                        Some(vec![Target {
+                            url: f.defining.url.to_string(),
+                            target_range: f.defining.range.clone(),
+                            origin_range: range,
+                        }])
+                    }
+                };
+            }
+            let f = lib.search_feature(scope, name)?;
             Target {
                 url: f.defining.url.to_string(),
                 target_range: f.defining.range.clone(),
@@ -192,7 +356,22 @@ pub(crate) fn resolve(
             // A default value may reference an identity (identityref leaves)
             // or an enum member of the owning leaf/typedef's enumeration.
             let (prefix, local) = split_ref(name);
-            if let Some(id) = lib.search_identity(module_for(scope, prefix, lib)?, local) {
+            if let Some((part, range)) = ref_part_at(rope, arg.range.clone(), byte) {
+                let prefix = prefix?;
+                return Some(vec![match part {
+                    RefPart::Prefix => prefix_target(root, url, prefix, range)?,
+                    RefPart::Name => {
+                        let module = module_for(scope, Some(prefix), lib)?;
+                        let id = lib.search_identity(module, local)?;
+                        Target {
+                            url: id.defining.url.to_string(),
+                            target_range: id.defining.range.clone(),
+                            origin_range: range,
+                        }
+                    }
+                }]);
+            }
+            if let Some(id) = lib.search_identity(scope, name) {
                 return Some(vec![Target {
                     url: id.defining.url.to_string(),
                     target_range: id.defining.range.clone(),
@@ -412,10 +591,8 @@ mod tests {
             .unwrap()
             .to_string();
         assert_eq!(name, "info");
-        assert_eq!(
-            targets[0].origin_range,
-            root.narrowest_at(byte).unwrap().keyword.clone().unwrap()
-        );
+        // The origin is the local half the caret is on, not the whole head.
+        assert_eq!(targets[0].origin_range, byte..byte + "info".len());
     }
 
     const FEAT: &str = "module fmod {\n  namespace \"urn:f\";\n  prefix f;\n\
@@ -558,6 +735,106 @@ mod tests {
             hit.contains("host"),
             "target text {hit:?} should name the leaf"
         );
+    }
+
+    const XDEF: &str = "module ext {\n  namespace \"urn:ext\";\n  prefix vendor;\n\
+      typedef speed { type uint32; }\n  identity base-id;\n  feature turbo;\n\
+      grouping cfg { leaf host { type string; } }\n\
+      extension info { argument name; }\n}\n";
+    const XUSE: &str = "module app {\n  namespace \"urn:app\";\n  prefix a;\n\
+      import ext { prefix vendor; }\n\
+      typedef local-speed { type uint32; }\n\
+      leaf x { type vendor:speed; }\n\
+      leaf y { type a:local-speed; }\n\
+      identity derived { base vendor:base-id; }\n\
+      leaf f { if-feature vendor:turbo; type string; }\n\
+      container uses-cfg { uses vendor:cfg; }\n\
+      leaf d { type identityref { base vendor:base-id; } default vendor:base-id; }\n\
+      vendor:info \"x\";\n}\n";
+
+    #[test]
+    fn goto_prefixed_type_splits_between_the_import_and_the_typedef() {
+        let mut repo = Repository::new();
+        repo.upsert("/ext.yang", XDEF.to_string());
+        repo.upsert("/app.yang", XUSE.to_string());
+        let out = repo.compile();
+        let lib = out.library.expect("library");
+        let rope = Rope::from_str(XUSE);
+        let root = repo.statement("/app.yang").expect("root").clone();
+        let at = XUSE.find("vendor:speed").unwrap();
+
+        // Prefix half: the `prefix vendor` argument of the import.
+        let t = resolve(&rope, &root, "/app.yang", at, "app", &lib).expect("prefix goto");
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].url, "/app.yang");
+        assert_eq!(text_at(XUSE, t[0].target_range.clone()), "vendor");
+        assert_eq!(t[0].origin_range, at..at + "vendor".len());
+
+        // Local-name half: the typedef definition.
+        let b = at + "vendor:".len();
+        let t = resolve(&rope, &root, "/app.yang", b, "app", &lib).expect("typedef goto");
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].url, "/ext.yang");
+        assert!(text_at(XDEF, t[0].target_range.clone()).contains("speed"));
+        assert_eq!(t[0].origin_range, b..b + "speed".len());
+    }
+
+    #[test]
+    fn goto_on_the_modules_own_prefix_reaches_its_prefix_statement() {
+        let mut repo = Repository::new();
+        repo.upsert("/ext.yang", XDEF.to_string());
+        repo.upsert("/app.yang", XUSE.to_string());
+        let out = repo.compile();
+        let lib = out.library.expect("library");
+        let rope = Rope::from_str(XUSE);
+        let root = repo.statement("/app.yang").expect("root").clone();
+        let at = XUSE.find("a:local-speed").unwrap();
+        let t = resolve(&rope, &root, "/app.yang", at, "app", &lib).expect("own prefix goto");
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].url, "/app.yang");
+        assert_eq!(text_at(XUSE, t[0].target_range.clone()), "a");
+    }
+
+    #[test]
+    fn goto_splits_every_prefixed_reference_at_the_colon() {
+        let mut repo = Repository::new();
+        repo.upsert("/ext.yang", XDEF.to_string());
+        repo.upsert("/app.yang", XUSE.to_string());
+        let out = repo.compile();
+        let lib = out.library.expect("library");
+        let rope = Rope::from_str(XUSE);
+        let root = repo.statement("/app.yang").expect("root").clone();
+
+        // The prefix half of every form lands on the import's `prefix`
+        // argument.
+        let references = [
+            XUSE.find("if-feature vendor:turbo").unwrap() + "if-feature ".len(),
+            XUSE.find("uses vendor:cfg").unwrap() + "uses ".len(),
+            XUSE.find("default vendor:base-id").unwrap() + "default ".len(),
+            XUSE.find("vendor:info").unwrap(),
+        ];
+        for at in references {
+            let t = resolve(&rope, &root, "/app.yang", at, "app", &lib).expect("prefix goto");
+            assert_eq!(t.len(), 1);
+            assert_eq!(t[0].url, "/app.yang", "reference at {at}");
+            assert_eq!(text_at(XUSE, t[0].target_range.clone()), "vendor");
+        }
+
+        // The local-name half lands on the definition in the other module.
+        for (at, needle) in [
+            (references[0] + "vendor:".len(), "turbo"),
+            (references[1] + "vendor:".len(), "cfg"),
+            (references[2] + "vendor:".len(), "base-id"),
+            (references[3] + "vendor:".len(), "info"),
+        ] {
+            let t = resolve(&rope, &root, "/app.yang", at, "app", &lib).expect("definition goto");
+            assert_eq!(t.len(), 1);
+            assert_eq!(t[0].url, "/ext.yang", "reference at {at}");
+            assert!(
+                text_at(XDEF, t[0].target_range.clone()).contains(needle),
+                "reference at {at}"
+            );
+        }
     }
 
     const UA: &str = "module ua {\n  namespace \"urn:ua\";\n  prefix ua;\n\

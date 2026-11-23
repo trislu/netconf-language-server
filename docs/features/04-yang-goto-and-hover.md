@@ -11,6 +11,14 @@ reference) and resolve it across modules, incl. `leafref` paths.
   definition lives in another module. Covers `typedef`, `grouping`,
   `identity`, `feature`, `extension` references and `leafref` path
   references.
+- **Prefixed references split at the colon**: on `prefix:name`, the caret
+  chooses the target, for `type`, `base`, `uses`, `if-feature`, an
+  identity-valued `default`, and an extension usage head. On the prefix, hover
+  shows and goto opens the `import` that binds it (or the module's own
+  `prefix` statement). On the local name, both resolve to the definition in
+  the imported module — a `typedef`, `identity`, `grouping`, `feature`, or
+  `extension`. Path arguments (`augment`, `deviation`, `leafref` `path`) keep
+  resolving as whole paths.
 - **Hover**: hover a name to see the defining source snippet plus the node's
   kind/type, `identity` ancestry, and which prefixes are in scope.
 - **When it runs / customization**: nothing to enable and no settings — both
@@ -26,5 +34,7 @@ reference) and resolve it across modules, incl. `leafref` paths.
   (`def_at`); resolution through `yrepo::Library` queries (see
   [`../architecture.md`](../architecture.md) §8.4 and yrepo README). Caret anywhere on a
   definition statement (name, keyword, or body gap) resolves to it.
+  `goto::ref_part_at` decides which half of a `prefix:name` argument the caret
+  is on; both hover and goto use it.
 - **Tests**: unit tests in `src/goto.rs` / `src/hover.rs` /
   `src/references.rs`.

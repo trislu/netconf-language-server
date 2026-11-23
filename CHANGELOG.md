@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Hover and go-to-definition agree on a prefixed reference.** In
+  `prefix:name`, the caret now chooses the target, for `type`, `base`, `uses`,
+  `if-feature`, an identity-valued `default`, and an extension usage head. On
+  the prefix, both show and jump to the `import` that binds it (or the
+  module's own `prefix` statement); on the local name, both resolve to the
+  definition in that module (`typedef`, `identity`, `grouping`, `feature`, or
+  `extension`). Hover used to describe the prefix wherever the caret was,
+  while goto jumped to the definition.
+
 ## [0.8.2] - 2026-11-23
 
 No public API change and no parse-output change; this release only fixes the

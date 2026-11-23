@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   definition in that module (`typedef`, `identity`, `grouping`, `feature`, or
   `extension`). Hover used to describe the prefix wherever the caret was,
   while goto jumped to the definition.
+- **Path arguments follow the caret.** In an `augment`, `deviation`, or
+  `leafref` `path` argument, a segment under the caret resolves to the node at
+  that position, and a segment prefix resolves to its `import`; a caret inside
+  a predicate keeps resolving the whole path.
 
 ## [0.8.2] - 2026-11-23
 

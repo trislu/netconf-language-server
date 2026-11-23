@@ -10,6 +10,7 @@ use ropey::Rope;
 use tower_lsp_server::ls_types::{LocationLink, Uri};
 use yrepo::{Library, Statement, StatementKind};
 
+use crate::pathref::path_segment_at;
 use crate::{client::Window, convert, log};
 
 /// The RFC 7950 built-in type names (used to skip goto on `type` args).
@@ -171,6 +172,45 @@ fn prefix_target(
         target_range: own.range.clone(),
         origin_range,
     })
+}
+
+/// Goto for a schema-node-id argument: the node at the segment under the
+/// caret, or the import binding when the caret is on a segment's prefix.
+fn path_target(
+    rope: &Rope,
+    root: &Statement,
+    arg: &yrepo::Argument,
+    url: &str,
+    byte: usize,
+    scope: &str,
+    lib: &Library,
+) -> Option<Vec<Target>> {
+    let path = arg.path();
+    if !path.starts_with('/') {
+        return None;
+    }
+    if let Some((segment, _)) = path_segment_at(rope, arg, byte) {
+        if let Some(prefix) = segment.prefix_at(rope, byte) {
+            let range = segment.prefix_range.clone()?;
+            return Some(vec![prefix_target(root, url, &prefix, range)?]);
+        }
+        let node = lib.resolve_abs_schema_node_id(scope, &segment.path)?;
+        let loc = node.defining();
+        return Some(vec![Target {
+            url: loc.url.to_string(),
+            target_range: loc.range.clone(),
+            origin_range: segment.local_range.clone(),
+        }]);
+    }
+    // A caret outside the node names (a predicate) keeps the whole-path
+    // result.
+    let node = lib.resolve_abs_schema_node_id(scope, &path)?;
+    let loc = node.defining();
+    Some(vec![Target {
+        url: loc.url.to_string(),
+        target_range: loc.range.clone(),
+        origin_range: arg.range.clone(),
+    }])
 }
 
 /// Build the jump target list for the statement under `byte`.
@@ -387,17 +427,7 @@ pub(crate) fn resolve(
             }
         }
         K::Augment => {
-            let path = arg.path();
-            if !path.starts_with('/') {
-                return None;
-            }
-            let node = lib.resolve_abs_schema_node_id(scope, &path)?;
-            let loc = node.defining();
-            Target {
-                url: loc.url.to_string(),
-                target_range: loc.range.clone(),
-                origin_range: arg.range.clone(),
-            }
+            return path_target(rope, root, arg, url, byte, scope, lib);
         }
         // A `leafref` `path` (RFC 7950 §9.9) names the schema node the leaf
         // references. Absolute paths (the common cross-module form) jump
@@ -405,32 +435,12 @@ pub(crate) fn resolve(
         // paths need the owner leaf's own schema path and are deferred to the
         // leafref-path engine (P1).
         K::Path => {
-            let path = arg.path();
-            if !path.starts_with('/') {
-                return None;
-            }
-            let node = lib.resolve_abs_schema_node_id(scope, &path)?;
-            let loc = node.defining();
-            Target {
-                url: loc.url.to_string(),
-                target_range: loc.range.clone(),
-                origin_range: arg.range.clone(),
-            }
+            return path_target(rope, root, arg, url, byte, scope, lib);
         }
         // A `deviation` target names a schema node just like an `augment`
         // target does; jump there for writers editing deviations.
         K::Deviation => {
-            let path = arg.path();
-            if !path.starts_with('/') {
-                return None;
-            }
-            let node = lib.resolve_abs_schema_node_id(scope, &path)?;
-            let loc = node.defining();
-            Target {
-                url: loc.url.to_string(),
-                target_range: loc.range.clone(),
-                origin_range: arg.range.clone(),
-            }
+            return path_target(rope, root, arg, url, byte, scope, lib);
         }
         // A `uses-augment` (augment inside a uses) names a data node of the
         // used grouping, like refine — same-file groupings.
@@ -684,6 +694,32 @@ mod tests {
             hit.contains("port"),
             "target text {hit:?} should name the leaf"
         );
+    }
+
+    #[test]
+    fn goto_splits_a_path_at_the_segment_under_the_caret() {
+        let mut repo = Repository::new();
+        repo.upsert("/lrbase.yang", LRF.to_string());
+        repo.upsert("/lr.yang", LR.to_string());
+        let out = repo.compile();
+        let lib = out.library.expect("library");
+        let rope = Rope::from_str(LR);
+        let root = repo.statement("/lr.yang").expect("root").clone();
+        // `at` is the first `/`; the segments are `b:top`, `b:item`, `b:port`.
+        let at = LR.find("path \"/b:top/b:item/b:port\"").unwrap() + "path \"".len();
+
+        // A middle segment jumps to the definition of that node.
+        let item = at + "/b:top/b:".len();
+        let t = resolve(&rope, &root, "/lr.yang", item, "lr", &lib).expect("path node goto");
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].url, "/lrbase.yang");
+        assert!(text_at(LRF, t[0].target_range.clone()).contains("item"));
+
+        // A segment prefix jumps to the import in this file.
+        let t = resolve(&rope, &root, "/lr.yang", at + 1, "lr", &lib).expect("prefix goto");
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].url, "/lr.yang");
+        assert_eq!(text_at(LR, t[0].target_range.clone()), "b");
     }
 
     const DEV: &str = "module devbase {\n  namespace \"urn:db\";\n  prefix db;\n\

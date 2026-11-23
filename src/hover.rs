@@ -8,6 +8,7 @@ use ropey::Rope;
 use yrepo::{Library, Statement, StatementKind};
 
 use crate::goto::{RefPart, ref_part_at};
+use crate::pathref::path_segment_at;
 
 /// RFC 7950 built-in type names (skip hover chains for these).
 const BUILTIN_TYPES: &[&str] = &[
@@ -141,6 +142,44 @@ fn enum_owner_name(owner: &Statement, name: &str) -> Option<String> {
         .iter()
         .find(|c| c.kind == K::Enum && c.arg.as_ref().is_some_and(|a| a.name() == name))?;
     Some(en.arg.as_ref()?.name().to_string())
+}
+
+/// Hover for a schema-node-id argument: the node at the segment under the
+/// caret, or the prefix binding when the caret is on a segment's prefix.
+/// `label` names the last segment; earlier ones are "path node".
+fn path_hover(
+    rope: &Rope,
+    root: &Statement,
+    arg: &yrepo::Argument,
+    byte: usize,
+    scope: &str,
+    lib: &Library,
+    label: &str,
+) -> Option<String> {
+    let path = arg.path();
+    if !path.starts_with('/') {
+        return None;
+    }
+    if let Some((segment, last)) = path_segment_at(rope, arg, byte) {
+        if let Some(prefix) = segment.prefix_at(rope, byte) {
+            return prefixed_ref(rope, root, scope, lib, &prefix);
+        }
+        let node = lib.resolve_abs_schema_node_id(scope, &segment.path)?;
+        return Some(format!(
+            "{} **`{}`** (kind: {:?})",
+            if last { label } else { "path node" },
+            node.name(),
+            node.kind()
+        ));
+    }
+    // A caret outside the node names (a predicate) keeps the whole-path
+    // result.
+    let node = lib.resolve_abs_schema_node_id(scope, &path)?;
+    Some(format!(
+        "{label} **`{}`** (kind: {:?})",
+        node.name(),
+        node.kind()
+    ))
 }
 
 pub(crate) fn handle(
@@ -304,45 +343,12 @@ pub(crate) fn handle(
                 g.name, g.defining.url
             ))
         }
-        K::Augment => {
-            let path = arg.path();
-            if !path.starts_with('/') {
-                return None;
-            }
-            let node = lib.resolve_abs_schema_node_id(scope, &path)?;
-            Some(format!(
-                "target node **`{}`** (kind: {:?})",
-                node.name(),
-                node.kind()
-            ))
-        }
+        K::Augment => path_hover(rope, root, arg, byte, scope, lib, "target node"),
         // A `leafref` `path`: absolute paths describe the referenced node
         // (predicates stripped); relative paths await the leafref engine.
-        K::Path => {
-            let path = arg.path();
-            if !path.starts_with('/') {
-                return None;
-            }
-            let node = lib.resolve_abs_schema_node_id(scope, &path)?;
-            Some(format!(
-                "leafref target **`{}`** (kind: {:?})",
-                node.name(),
-                node.kind()
-            ))
-        }
+        K::Path => path_hover(rope, root, arg, byte, scope, lib, "leafref target"),
         // A `deviation` target describes the affected node.
-        K::Deviation => {
-            let path = arg.path();
-            if !path.starts_with('/') {
-                return None;
-            }
-            let node = lib.resolve_abs_schema_node_id(scope, &path)?;
-            Some(format!(
-                "deviation target **`{}`** (kind: {:?})",
-                node.name(),
-                node.kind()
-            ))
-        }
+        K::Deviation => path_hover(rope, root, arg, byte, scope, lib, "deviation target"),
         K::Refine => {
             let t = crate::goto::refine_target_in_file(root, stmt, scope, lib)?;
             let name = t
@@ -466,6 +472,34 @@ mod tests {
         let b = DV.find("deviation \"/db:c/db:mtu\"").unwrap() + "deviation \"".len();
         let t = handle(&rope, &root, b, "dv", &lib).expect("deviation hover");
         assert!(t.contains("deviation target **`mtu`**"), "{t}");
+    }
+
+    #[test]
+    fn hover_splits_a_path_at_the_segment_under_the_caret() {
+        let mut repo = Repository::new();
+        repo.upsert("/lrbase.yang", LRF.to_string());
+        repo.upsert("/lr.yang", LR.to_string());
+        let out = repo.compile();
+        let lib = out.library.expect("library");
+        let rope = Rope::from_str(LR);
+        let root = repo.statement("/lr.yang").expect("root").clone();
+        // `at` is the first `/`; the segments are `b:top`, `b:item`, `b:port`.
+        let at = LR.find("path \"/b:top/b:item/b:port\"").unwrap() + "path \"".len();
+
+        // A middle segment describes the node at that position.
+        let item = at + "/b:top/b:".len();
+        let t = handle(&rope, &root, item, "lr", &lib).expect("path node hover");
+        assert!(t.contains("path node **`item`**"), "{t}");
+
+        // The last segment keeps the leafref wording.
+        let port = at + "/b:top/b:item/b:".len();
+        let t = handle(&rope, &root, port, "lr", &lib).expect("leafref hover");
+        assert!(t.contains("leafref target **`port`**"), "{t}");
+
+        // A segment prefix names its import.
+        let t = handle(&rope, &root, at + 1, "lr", &lib).expect("prefix hover");
+        assert!(t.contains("prefix **`b`**"), "{t}");
+        assert!(t.contains("import lrbase { prefix b; }"), "{t}");
     }
 
     #[test]

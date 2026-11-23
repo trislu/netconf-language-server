@@ -7,10 +7,10 @@ name: vsix
 # side of a Remote-SSH window, where the extension runs with `extensionKind:
 # workspace` and the binary has to match the remote, not the UI host.
 #
-# A tag builds every target and publishes it; `workflow_dispatch` builds the
-# artifacts without publishing. Pull requests do not run this workflow: the
-# Rust jobs already gate the binary itself, and packaging it six times per PR
-# would not catch anything they miss.
+# A tag builds every target and publishes it to the Marketplace and to Open
+# VSX; `workflow_dispatch` builds the artifacts without publishing. Pull
+# requests do not run this workflow: the Rust jobs already gate the binary
+# itself, and packaging it six times per PR would not catch anything they miss.
 on:
   workflow_dispatch:
   push:
@@ -217,6 +217,77 @@ jobs:
             echo "attempt $attempt: publishing ${{ matrix.target }} as $GITHUB_REF_NAME"
             if npx --yes @vscode/vsce@latest publish \
                  --oidc --skip-duplicate --packagePath "${packages[@]}"; then
+              exit 0
+            fi
+            echo "attempt $attempt failed; retrying in 30s" >&2
+            sleep 30
+          done
+          exit 1
+
+  # Open VSX is the registry the editors that are not VS Code read from:
+  # VSCodium, Theia, Gitpod, and anything else built on the open-source
+  # extension API. The extension is registered there as a trusted publisher
+  # for this repository and this workflow file, so the job proves its identity
+  # with the OIDC token GitHub issues it. No access token is stored in this
+  # repository, and the registry returns a publishing token scoped to
+  # `k19.netconf` that expires within minutes.
+  #
+  # The registration is for `trislu/netconf-language-server` and
+  # `.github/workflows/vsix.yml`, with no environment, so this job has to stay
+  # in this file: the registry matches the repository IDs and the workflow path
+  # from the OIDC token, and moving the job to another workflow makes every
+  # exchange fail. If the registration later pins an environment, add the same
+  # `environment:` here. The publisher field in `clients/vscode/package.json`
+  # is compared case-sensitively against the namespace, so `k19` has to keep
+  # that exact case.
+  openvsx:
+    name: openvsx ${{ matrix.target }}
+    needs: package
+    # Only a tag release publishes, as with the Marketplace job.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    strategy:
+      # Each target is independent; one failure must not cancel the rest.
+      fail-fast: false
+      matrix:
+        target:
+          - linux-x64
+          - linux-arm64
+          - darwin-x64
+          - darwin-arm64
+          - win32-x64
+          - win32-arm64
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vsix-${{ matrix.target }}
+          path: artifact
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # `--trusted-publishing` fails the job when no ID token can be obtained.
+      # Without it the CLI would fall back to a prompt. `--skip-duplicate`
+      # makes a retry resume instead of failing on a target already
+      # published.
+      - name: Publish ${{ matrix.target }}
+        shell: bash
+        run: |
+          shopt -s nullglob
+          packages=(artifact/*.vsix)
+          if [ "${#packages[@]}" -eq 0 ]; then
+            echo "no VSIX in the vsix-${{ matrix.target }} artifact" >&2
+            exit 1
+          fi
+          for attempt in 1 2 3; do
+            echo "attempt $attempt: publishing ${{ matrix.target }} as $GITHUB_REF_NAME"
+            if npx --yes ovsx@latest publish \
+                 --trusted-publishing --skip-duplicate \
+                 --packagePath "${packages[@]}"; then
               exit 0
             fi
             echo "attempt $attempt failed; retrying in 30s" >&2
